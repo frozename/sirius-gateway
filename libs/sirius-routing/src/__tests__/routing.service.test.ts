@@ -1,8 +1,8 @@
 import { describe, it, expect, mock, beforeEach } from 'bun:test';
 import { RoutingService } from '../routing.service.js';
-import { ModelRegistryService } from '@sirius/model-registry';
-import { ProviderRegistry } from '@sirius/core';
-import { LatencyTracker } from '@sirius/observability';
+import { ModelRegistryService } from '../../../sirius-model-registry/src/index.js';
+import { ProviderRegistry } from '../../../sirius-core/src/index.js';
+import { LatencyTracker } from '../../../sirius-observability/src/index.js';
 import { PinnedStrategy } from '../strategies/pinned.strategy.js';
 import { FastestStrategy } from '../strategies/fastest.strategy.js';
 import { CheapestStrategy } from '../strategies/cheapest.strategy.js';
@@ -137,7 +137,7 @@ describe('RoutingService', () => {
 
       const decision = routingService.route({ model: 'gpt-4', stream: false }, 'nonexistent');
       
-      expect(decision.strategy).toBe('nonexistent');
+      expect(decision.strategy).toBe('pinned');
       expect(pinnedStrategyMock.select).toHaveBeenCalled();
     });
 

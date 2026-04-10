@@ -1,6 +1,7 @@
 import { expect, test, describe, beforeEach, spyOn } from 'bun:test';
 import { StreamingObserver } from '../streaming-observer';
-import type { UnifiedStreamEvent } from '@sirius/core';
+import type { UnifiedStreamEvent } from '../../../sirius-core/src/index.js';
+import { collectAsync } from '../../../sirius-core/src/__tests__/test-helpers.js';
 
 describe('StreamingObserver', () => {
   let observer: StreamingObserver;
@@ -16,14 +17,6 @@ describe('StreamingObserver', () => {
     loggerSpy = spyOn(observer['logger'], 'log').mockImplementation(() => {});
   });
 
-  async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
-    const results: T[] = [];
-    for await (const item of iterable) {
-      results.push(item);
-    }
-    return results;
-  }
-
   test('passes through all events unchanged', async () => {
     const events: UnifiedStreamEvent[] = [
       { type: 'content_delta', delta: 'hello' },
@@ -35,7 +28,7 @@ describe('StreamingObserver', () => {
     }
 
     const stream = observer.observe(generate(), metadata);
-    const result = await collect(stream);
+    const result = await collectAsync(stream);
     
     expect(result).toEqual(events);
   });
@@ -52,7 +45,7 @@ describe('StreamingObserver', () => {
     }
 
     const stream = observer.observe(generate(), metadata);
-    await collect(stream);
+    await collectAsync(stream);
     
     expect(loggerSpy).toHaveBeenCalled();
     const logCall = loggerSpy.mock.calls[0][0];
@@ -70,7 +63,7 @@ describe('StreamingObserver', () => {
     }
 
     const stream = observer.observe(generate(), metadata);
-    await collect(stream);
+    await collectAsync(stream);
     
     const logCall = loggerSpy.mock.calls[0][0];
     expect(logCall.totalBytes).toBe(10);
@@ -88,7 +81,7 @@ describe('StreamingObserver', () => {
     }
 
     const stream = observer.observe(generate(), metadata);
-    await collect(stream);
+    await collectAsync(stream);
     
     const logCall = loggerSpy.mock.calls[0][0];
     expect(logCall.tokenUsage).toEqual(usage);
@@ -104,7 +97,7 @@ describe('StreamingObserver', () => {
     }
 
     const stream = observer.observe(generate(), metadata);
-    await collect(stream);
+    await collectAsync(stream);
     
     expect(loggerSpy).toHaveBeenCalledTimes(1);
     const logCall = loggerSpy.mock.calls[0][0];
@@ -124,7 +117,7 @@ describe('StreamingObserver', () => {
     const stream = observer.observe(generate(), metadata);
     
     try {
-      await collect(stream);
+      await collectAsync(stream);
     } catch (e) {
       // ignore
     }
@@ -141,7 +134,7 @@ describe('StreamingObserver', () => {
     }
 
     const stream = observer.observe(generate(), metadata);
-    const result = await collect(stream);
+    const result = await collectAsync(stream);
     
     expect(result).toEqual([]);
     expect(loggerSpy).toHaveBeenCalledTimes(1);

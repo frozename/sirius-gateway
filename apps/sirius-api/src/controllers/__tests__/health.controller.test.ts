@@ -41,6 +41,13 @@ describe('HealthController', () => {
       expect(res.uptimeSeconds).toBeGreaterThanOrEqual(0);
       expect(res.timestamp).toBeDefined();
     });
+
+    it('returns 0 counts when registry is empty', async () => {
+      mockRegistry.listModels.mockReturnValue([]);
+      const res = await controller.health();
+      expect(res.stats.registeredProviders).toBe(0);
+      expect(res.stats.configuredModels).toBe(0);
+    });
   });
 
   describe('providersHealth', () => {

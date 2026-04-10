@@ -1,0 +1,36 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "ignoreDeprecations": "5.0",
+    "types": ["bun"],
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "baseUrl": ".",
+    "paths": {
+      "@sirius/core": ["libs/sirius-core/src"],
+      "@sirius/core/*": ["libs/sirius-core/src/*"],
+      "@sirius/compat-openai": ["libs/sirius-compat-openai/src"],
+      "@sirius/compat-openai/*": ["libs/sirius-compat-openai/src/*"],
+      "@sirius/routing": ["libs/sirius-routing/src"],
+      "@sirius/routing/*": ["libs/sirius-routing/src/*"],
+      "@sirius/policy": ["libs/sirius-policy/src"],
+      "@sirius/policy/*": ["libs/sirius-policy/src/*"],
+      "@sirius/observability": ["libs/sirius-observability/src"],
+      "@sirius/observability/*": ["libs/sirius-observability/src/*"],
+      "@sirius/auth": ["libs/sirius-auth/src"],
+      "@sirius/auth/*": ["libs/sirius-auth/src/*"],
+      "@sirius/model-registry": ["libs/sirius-model-registry/src"],
+      "@sirius/model-registry/*": ["libs/sirius-model-registry/src/*"],
+      "@sirius/provider-openai": ["libs/provider-openai/src"],
+      "@sirius/provider-openai/*": ["libs/provider-openai/src/*"],
+      "@sirius/provider-anthropic": ["libs/provider-anthropic/src"],
+      "@sirius/provider-anthropic/*": ["libs/provider-anthropic/src/*"],
+      "@sirius/provider-ollama": ["libs/provider-ollama/src"],
+      "@sirius/provider-ollama/*": ["libs/provider-ollama/src/*"]
+    }
+  },
+  "include": [
+    "apps/*/src/**/*.ts",
+    "libs/*/src/**/*.ts"
+  ]
+}

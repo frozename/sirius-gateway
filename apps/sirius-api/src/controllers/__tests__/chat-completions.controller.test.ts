@@ -217,5 +217,20 @@ describe('ChatCompletionsController', () => {
       expect(mockResRaw.write).toHaveBeenCalledWith('data: [DONE]\n\n');
       expect(mockResRaw.end).toHaveBeenCalled();
     });
+
+    it('handles immediate throw in gateway.streamResponse', async () => {
+      const parsedReq = { model: 'test', stream: true };
+      mockCompat.parseChatCompletionRequest.mockReturnValue(parsedReq);
+      mockGateway.streamResponse.mockImplementation(() => {
+        throw new Error('Immediate stream failure');
+      });
+      mockCompat.formatError.mockReturnValue({ error: 'formatted' });
+
+      await controller.chatCompletions({} as any, mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockCompat.formatError).toHaveBeenCalledWith(500, 'Immediate stream failure');
+      expect(mockRes.send).toHaveBeenCalledWith({ error: 'formatted' });
+    });
   });
 });

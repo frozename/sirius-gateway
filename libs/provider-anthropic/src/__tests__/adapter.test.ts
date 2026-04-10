@@ -6,8 +6,8 @@ import {
   createErrorResponse,
   createMockResponse,
   collectAsync,
-} from '@sirius/core/__tests__/test-helpers.js';
-import { makeUnifiedRequest, makeEmbeddingRequest, ANTHROPIC_SSE_FIXTURE } from '@sirius/core/__tests__/fixtures.js';
+} from '../../../sirius-core/src/__tests__/test-helpers.js';
+import { makeUnifiedRequest, makeEmbeddingRequest, ANTHROPIC_SSE_FIXTURE } from '../../../sirius-core/src/__tests__/fixtures.js';
 
 describe('AnthropicAdapter', () => {
   const adapter = new AnthropicAdapter('test-key');
@@ -59,6 +59,83 @@ describe('AnthropicAdapter', () => {
       restoreFetch = mockFetch(() => createErrorResponse(400, 'Invalid request'));
       await expect(adapter.createResponse(makeUnifiedRequest())).rejects.toThrow('Anthropic API error 400: Invalid request');
     });
+
+    it('maps multiple content blocks correctly', async () => {
+      restoreFetch = mockFetch(() => createJsonResponse({
+        id: 'msg_123',
+        type: 'message',
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Thinking...' },
+          { type: 'tool_use', id: 'tool_1', name: 'search', input: { query: 'test' } }
+        ],
+        model: 'claude-3-opus',
+        stop_reason: 'tool_use',
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }));
+
+      const res = await adapter.createResponse(makeUnifiedRequest());
+      expect(res.content).toHaveLength(2);
+      expect(res.content[0].text).toBe('Thinking...');
+      expect(res.content[1].type).toBe('tool_call');
+      expect(res.content[1].toolCall?.function.name).toBe('search');
+    });
+
+    it('handles system messages correctly', async () => {
+      let sentBody: any;
+      restoreFetch = mockFetch(async (req) => {
+        sentBody = JSON.parse(await (req as Request).clone().text());
+        return createJsonResponse({ id: '1', role: 'assistant', content: [], model: 'm', stop_reason: 'end_turn', usage: {} });
+      });
+
+      const request = makeUnifiedRequest();
+      request.messages.push({ role: 'system', content: 'Be helpful' });
+      request.messages.push({ role: 'system', content: 'Be concise' });
+
+      await adapter.createResponse(request);
+      expect(sentBody.system).toBe('Be helpful\n\nBe concise');
+    });
+
+    it('maps tool choices correctly', async () => {
+      let sentBody: any;
+      restoreFetch = mockFetch(async (req) => {
+        sentBody = JSON.parse(await (req as Request).clone().text());
+        return createJsonResponse({ id: '1', role: 'assistant', content: [], model: 'm', stop_reason: 'end_turn', usage: {} });
+      });
+
+      const request = makeUnifiedRequest();
+      request.tools = [{ type: 'function', function: { name: 'f1', parameters: {} } }];
+      
+      // Test 'required' -> 'any'
+      request.toolChoice = 'required';
+      await adapter.createResponse(request);
+      expect(sentBody.tool_choice).toEqual({ type: 'any' });
+
+      // Test specific tool
+      request.toolChoice = { type: 'function', function: { name: 'f1' } };
+      await adapter.createResponse(request);
+      expect(sentBody.tool_choice).toEqual({ type: 'tool', name: 'f1' });
+    });
+
+    it('sets x-api-key header', async () => {
+      let reqHeaders: Record<string, string> | undefined;
+      restoreFetch = mockFetch((req) => {
+        reqHeaders = Object.fromEntries(new Headers((req as Request).headers));
+        return createJsonResponse({ id: '1', role: 'assistant', content: [], model: 'm', stop_reason: 'end_turn', usage: {} });
+      });
+      await adapter.createResponse(makeUnifiedRequest());
+      expect(reqHeaders!['x-api-key']).toBe('test-key');
+    });
+
+    it('sets anthropic-version header', async () => {
+      let reqHeaders: Record<string, string> | undefined;
+      restoreFetch = mockFetch((req) => {
+        reqHeaders = Object.fromEntries(new Headers((req as Request).headers));
+        return createJsonResponse({ id: '1', role: 'assistant', content: [], model: 'm', stop_reason: 'end_turn', usage: {} });
+      });
+      await adapter.createResponse(makeUnifiedRequest());
+      expect(reqHeaders!['anthropic-version']).toBe('2023-06-01');
+    });
   });
 
   describe('streamResponse', () => {
@@ -80,6 +157,13 @@ describe('AnthropicAdapter', () => {
       const events = await collectAsync(adapter.streamResponse(makeUnifiedRequest()));
       expect(events.length).toBe(1);
       expect(events[0]).toEqual({ type: 'error', error: 'Anthropic API error 400: Invalid request' });
+    });
+
+    it('handles non-JSON error body in stream', async () => {
+      restoreFetch = mockFetch(() => new Response('Service Unavailable', { status: 503, statusText: 'Service Unavailable' }));
+      const events = await collectAsync(adapter.streamResponse(makeUnifiedRequest()));
+      expect(events.length).toBe(1);
+      expect(events[0]).toEqual({ type: 'error', error: 'Anthropic API error 503: Service Unavailable' });
     });
   });
 

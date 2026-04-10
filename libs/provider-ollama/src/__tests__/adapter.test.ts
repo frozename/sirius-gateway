@@ -5,8 +5,8 @@ import {
   createJsonResponse,
   createMockResponse,
   collectAsync,
-} from '@sirius/core/__tests__/test-helpers.js';
-import { makeUnifiedRequest, makeEmbeddingRequest, OLLAMA_NDJSON_FIXTURE } from '@sirius/core/__tests__/fixtures.js';
+} from '../../../sirius-core/src/__tests__/test-helpers.js';
+import { makeUnifiedRequest, makeEmbeddingRequest, OLLAMA_NDJSON_FIXTURE } from '../../../sirius-core/src/__tests__/fixtures.js';
 
 describe('OllamaAdapter', () => {
   const adapter = new OllamaAdapter();
@@ -53,6 +53,73 @@ describe('OllamaAdapter', () => {
       restoreFetch = mockFetch(() => createMockResponse('Some plain text error', 500));
       await expect(adapter.createResponse(makeUnifiedRequest())).rejects.toThrow('Ollama API error 500: Some plain text error');
     });
+
+    it('maps tool calls to unified content', async () => {
+      restoreFetch = mockFetch(() => createJsonResponse({
+        model: 'llama3',
+        message: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{
+            function: { name: 'get_weather', arguments: { location: 'London' } }
+          }]
+        },
+        done: true,
+      }));
+
+      const res = await adapter.createResponse(makeUnifiedRequest());
+      expect(res.content[0].type).toBe('tool_call');
+      expect(res.content[0].toolCall?.function.name).toBe('get_weather');
+      expect(res.finishReason).toBe('tool_calls');
+    });
+
+    it('maps generation options correctly', async () => {
+      let sentBody: any;
+      restoreFetch = mockFetch(async (req) => {
+        sentBody = JSON.parse(await (req as Request).clone().text());
+        return createJsonResponse({ model: 'm', message: { role: 'a' }, done: true });
+      });
+
+      const request = makeUnifiedRequest();
+      request.temperature = 0.5;
+      request.maxTokens = 100;
+      request.stop = ['STOP'];
+
+      await adapter.createResponse(request);
+      expect(sentBody.options.temperature).toBe(0.5);
+      expect(sentBody.options.num_predict).toBe(100);
+      expect(sentBody.options.stop).toEqual(['STOP']);
+    });
+
+    it('handles multi-part image content', async () => {
+      let sentBody: any;
+      restoreFetch = mockFetch(async (req) => {
+        sentBody = JSON.parse(await (req as Request).clone().text());
+        return createJsonResponse({ model: 'm', message: { role: 'a' }, done: true });
+      });
+
+      const request = makeUnifiedRequest();
+      request.messages[0].content = [
+        { type: 'text', text: 'What is this?' },
+        { type: 'image_url', imageUrl: 'base64-data' }
+      ];
+
+      await adapter.createResponse(request);
+      expect(sentBody.messages[0].content).toBe('What is this?');
+      expect(sentBody.messages[0].images).toEqual(['base64-data']);
+    });
+
+    it('delegates request mapping to toOllamaRequest', async () => {
+      let sentBody: any;
+      restoreFetch = mockFetch(async (req) => {
+        sentBody = JSON.parse(await (req as Request).clone().text());
+        return createJsonResponse({ message: { role: 'assistant', content: 'hi' }, model: 'llama3', done: true });
+      });
+      await adapter.createResponse({ ...makeUnifiedRequest(), model: 'llama3' });
+      expect(sentBody.model).toBe('llama3');
+      expect(sentBody.messages).toBeDefined();
+      expect(sentBody.stream).toBe(false);
+    });
   });
 
   describe('streamResponse', () => {
@@ -74,6 +141,20 @@ describe('OllamaAdapter', () => {
       const events = await collectAsync(adapter.streamResponse(makeUnifiedRequest()));
       expect(events.length).toBe(1);
       expect(events[0]).toEqual({ type: 'error', error: 'Ollama API error 400: Bad input' });
+    });
+
+    it('yields tool call deltas in stream', async () => {
+      const toolStream = 
+        '{"model":"llama3","message":{"role":"assistant","tool_calls":[{"function":{"name":"f1","arguments":{"a":1}}}]},"done":false}\n' +
+        '{"model":"llama3","done":true}\n';
+      
+      restoreFetch = mockFetch(() => createMockResponse(toolStream, 200, { 'Content-Type': 'application/x-ndjson' }));
+      const events = await collectAsync(adapter.streamResponse(makeUnifiedRequest()));
+      
+      const tcDelta = events.find(e => e.type === 'tool_call_delta');
+      expect(tcDelta).toBeDefined();
+      expect(tcDelta?.name).toBe('f1');
+      expect(tcDelta?.argumentsDelta).toBe('{"a":1}');
     });
   });
 
@@ -97,6 +178,17 @@ describe('OllamaAdapter', () => {
       restoreFetch = mockFetch(() => createMockResponse('Model not found', 404));
       await expect(adapter.createEmbeddings(makeEmbeddingRequest())).rejects.toThrow('Ollama Embed API error 404: Model not found');
     });
+
+    it('serializes embedding request body correctly', async () => {
+      let sentBody: any;
+      restoreFetch = mockFetch(async (req) => {
+        sentBody = JSON.parse(await (req as Request).clone().text());
+        return createJsonResponse({ embeddings: [[0.1, 0.2]], model: 'llama3' });
+      });
+      await adapter.createEmbeddings(makeEmbeddingRequest());
+      expect(sentBody.model).toBeDefined();
+      expect(sentBody.input).toBeDefined();
+    });
   });
 
   describe('listModels', () => {
@@ -117,6 +209,12 @@ describe('OllamaAdapter', () => {
       expect(models).toHaveLength(2);
       expect(models[0].id).toBe('llama2');
       expect(models[0].ownedBy).toBe('local');
+    });
+
+    it('handles empty models list', async () => {
+      restoreFetch = mockFetch(() => createJsonResponse({ models: [] }));
+      const models = await adapter.listModels();
+      expect(models).toHaveLength(0);
     });
 
     it('throws on error', async () => {

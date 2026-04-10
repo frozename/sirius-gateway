@@ -112,5 +112,18 @@ describe('ModelsController', () => {
       expect(mockCompat.formatError).toHaveBeenCalledWith(404, 'Model "unknown" not found.', 'not_found_error', 'model_not_found');
       expect(mockRes.send).toHaveBeenCalledWith({ error: 'not found' });
     });
+
+    it('catches generic errors in getModel', async () => {
+      mockRegistry.getCapabilities.mockImplementation(() => {
+        throw new Error('Registry failure');
+      });
+      mockCompat.formatError.mockReturnValue({ error: 'registry error' });
+
+      await controller.getModel('any', mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockCompat.formatError).toHaveBeenCalledWith(500, 'Registry failure');
+      expect(mockRes.send).toHaveBeenCalledWith({ error: 'registry error' });
+    });
   });
 });
