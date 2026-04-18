@@ -182,10 +182,10 @@ describe('ChatCompletionsController', () => {
       const calls = mockResRaw.write.mock.calls;
       
       // Check that the error chunk is formatted
-      const errorCall = calls.find(call => call[0].includes('finish_reason":"error"'));
+      const errorCall = calls.find((call: unknown[]) => String(call[0]).includes('finish_reason":"error"'));
       expect(errorCall).toBeDefined();
 
-      const neverReachedCall = calls.find(call => call[0].includes('Never reached'));
+      const neverReachedCall = calls.find((call: unknown[]) => String(call[0]).includes('Never reached'));
       expect(neverReachedCall).toBeUndefined();
 
       expect(mockResRaw.write).toHaveBeenCalledWith('data: [DONE]\n\n');
@@ -211,7 +211,7 @@ describe('ChatCompletionsController', () => {
       await controller.chatCompletions({} as any, mockReq, mockRes);
 
       const calls = mockResRaw.write.mock.calls;
-      const secondChunkCall = calls.find(call => call[0].includes('chunk":"2"'));
+      const secondChunkCall = calls.find((call: unknown[]) => String(call[0]).includes('chunk":"2"'));
       expect(secondChunkCall).toBeUndefined();
       
       expect(mockResRaw.write).toHaveBeenCalledWith('data: [DONE]\n\n');

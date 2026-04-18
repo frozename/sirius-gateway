@@ -85,7 +85,7 @@ describe('HealthController', () => {
     it('returns degraded when a provider is unhealthy', async () => {
       mockGateway.getProviderHealth.mockResolvedValue([
         { provider: 'prov-1', status: 'healthy', latencyMs: 100 },
-        { provider: 'prov-2', status: 'unhealthy', latencyMs: 0, error: 'Timeout' },
+        { provider: 'prov-2', status: 'down', latencyMs: 0, error: 'Timeout' },
       ]);
 
       mockPolicy.getCircuitBreakerState.mockReturnValue({ isOpen: true, failures: 5 });
@@ -96,7 +96,7 @@ describe('HealthController', () => {
       expect(res.providers).toHaveLength(2);
       expect(res.providers[1]).toEqual({
         provider: 'prov-2',
-        status: 'unhealthy',
+        status: 'down',
         latencyMs: 0,
         circuitBreaker: { isOpen: true, failures: 5 },
         error: 'Timeout',

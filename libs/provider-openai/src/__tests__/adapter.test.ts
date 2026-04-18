@@ -45,7 +45,7 @@ describe('OpenAiAdapter', () => {
       const res = await adapter.createResponse(makeUnifiedRequest());
       expect(reqUrl).toBe('https://api.openai.com/v1/chat/completions');
       expect(res.provider).toBe('openai');
-      expect(res.content[0].text).toBe('hello');
+      expect(res.content[0]!.text).toBe('hello');
       
       const headers = Object.fromEntries(new Headers(reqOptions!.headers));
       expect(headers['authorization']).toBe('Bearer test-key');
@@ -74,7 +74,7 @@ describe('OpenAiAdapter', () => {
       }));
 
       const res = await adapter.createResponse(makeUnifiedRequest());
-      expect(res.content[0].text).toBe('first');
+      expect(res.content[0]!.text).toBe('first');
     });
 
     it('maps tool calls to unified content', async () => {
@@ -97,8 +97,8 @@ describe('OpenAiAdapter', () => {
       }));
 
       const res = await adapter.createResponse(makeUnifiedRequest());
-      expect(res.content[0].type).toBe('tool_call');
-      expect(res.content[0].toolCall?.function.name).toBe('get_weather');
+      expect(res.content[0]!.type).toBe('tool_call');
+      expect(res.content[0]!.toolCall?.function.name).toBe('get_weather');
       expect(res.finishReason).toBe('tool_calls');
     });
 
@@ -117,7 +117,7 @@ describe('OpenAiAdapter', () => {
       expect(sentBody.messages).toBeDefined();
       expect(sentBody.model).toBe('gpt-4o');
       // OpenAI format uses 'messages', unified format might use 'content' blocks in a different way
-      expect(sentBody.messages[0].role).toBe('user');
+      expect(sentBody.messages[0]!.role).toBe('user');
     });
   });
 
@@ -134,7 +134,7 @@ describe('OpenAiAdapter', () => {
 
       const events = await collectAsync(adapter.streamResponse(makeUnifiedRequest()));
       expect(events.length).toBeGreaterThan(0);
-      expect(events[0].type).toBe('content_delta');
+      expect(events[0]!.type).toBe('content_delta');
     });
 
     it('yields error event on HTTP error (NOT throw) with JSON message', async () => {
@@ -163,8 +163,8 @@ describe('OpenAiAdapter', () => {
       
       const tcDeltas = events.filter(e => e.type === 'tool_call_delta');
       expect(tcDeltas.length).toBe(2);
-      expect(tcDeltas[0].id).toBe('c1');
-      expect(tcDeltas[0].name).toBe('f1');
+      expect(tcDeltas[0]!.id).toBe('c1');
+      expect(tcDeltas[0]!.name).toBe('f1');
       
       const usageEvent = events.find(e => e.type === 'usage');
       expect(usageEvent?.usage?.totalTokens).toBe(15);
@@ -230,8 +230,8 @@ describe('OpenAiAdapter', () => {
       expect(reqUrl).toBe('https://api.openai.com/v1/models');
       expect(method).toBe('GET');
       expect(models).toHaveLength(1);
-      expect(models[0].id).toBe('gpt-4o');
-      expect(models[0].provider).toBe('openai');
+      expect(models[0]!.id).toBe('gpt-4o');
+      expect(models[0]!.provider).toBe('openai');
     });
 
     it('throws on error', async () => {

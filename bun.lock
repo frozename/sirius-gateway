@@ -53,6 +53,13 @@
       "name": "@sirius/provider-anthropic",
       "version": "0.1.0",
     },
+    "libs/provider-fromfile": {
+      "name": "@sirius/provider-fromfile",
+      "version": "0.1.0",
+      "dependencies": {
+        "yaml": "2.8.3",
+      },
+    },
     "libs/provider-llamactl": {
       "name": "@sirius/provider-llamactl",
       "version": "0.1.0",
@@ -146,6 +153,8 @@
     "@sirius/policy": ["@sirius/policy@workspace:libs/sirius-policy"],
 
     "@sirius/provider-anthropic": ["@sirius/provider-anthropic@workspace:libs/provider-anthropic"],
+
+    "@sirius/provider-fromfile": ["@sirius/provider-fromfile@workspace:libs/provider-fromfile"],
 
     "@sirius/provider-llamactl": ["@sirius/provider-llamactl@workspace:libs/provider-llamactl"],
 
@@ -316,6 +325,8 @@
     "undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "wrappy": ["wrappy@1.0.2", "", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="],
+
+    "yaml": ["yaml@2.8.3", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg=="],
 
     "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
 

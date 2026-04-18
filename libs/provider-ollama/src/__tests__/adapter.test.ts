@@ -42,7 +42,7 @@ describe('OllamaAdapter', () => {
       const res = await adapter.createResponse(makeUnifiedRequest());
       expect(reqUrl).toBe('http://localhost:11434/api/chat');
       expect(res.provider).toBe('ollama');
-      expect(res.content[0].text).toBe('hello');
+      expect(res.content[0]!.text).toBe('hello');
       
       const headers = Object.fromEntries(new Headers(reqOptions!.headers));
       expect(headers['content-type']).toBe('application/json');
@@ -68,8 +68,8 @@ describe('OllamaAdapter', () => {
       }));
 
       const res = await adapter.createResponse(makeUnifiedRequest());
-      expect(res.content[0].type).toBe('tool_call');
-      expect(res.content[0].toolCall?.function.name).toBe('get_weather');
+      expect(res.content[0]!.type).toBe('tool_call');
+      expect(res.content[0]!.toolCall?.function.name).toBe('get_weather');
       expect(res.finishReason).toBe('tool_calls');
     });
 
@@ -99,14 +99,14 @@ describe('OllamaAdapter', () => {
       });
 
       const request = makeUnifiedRequest();
-      request.messages[0].content = [
+      request.messages[0]!.content = [
         { type: 'text', text: 'What is this?' },
         { type: 'image_url', imageUrl: 'base64-data' }
       ];
 
       await adapter.createResponse(request);
-      expect(sentBody.messages[0].content).toBe('What is this?');
-      expect(sentBody.messages[0].images).toEqual(['base64-data']);
+      expect(sentBody.messages[0]!.content).toBe('What is this?');
+      expect(sentBody.messages[0]!.images).toEqual(['base64-data']);
     });
 
     it('delegates request mapping to toOllamaRequest', async () => {
@@ -207,8 +207,8 @@ describe('OllamaAdapter', () => {
       expect(reqUrl).toBe('http://localhost:11434/api/tags');
       expect(method).toBe('GET');
       expect(models).toHaveLength(2);
-      expect(models[0].id).toBe('llama2');
-      expect(models[0].ownedBy).toBe('local');
+      expect(models[0]!.id).toBe('llama2');
+      expect(models[0]!.ownedBy).toBe('local');
     });
 
     it('handles empty models list', async () => {

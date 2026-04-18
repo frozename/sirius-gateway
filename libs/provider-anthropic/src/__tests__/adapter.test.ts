@@ -48,7 +48,7 @@ describe('AnthropicAdapter', () => {
       const res = await adapter.createResponse(makeUnifiedRequest());
       expect(reqUrl).toBe('https://api.anthropic.com/v1/messages');
       expect(res.provider).toBe('anthropic');
-      expect(res.content[0].text).toBe('hello');
+      expect(res.content[0]!.text).toBe('hello');
       
       const headers = Object.fromEntries(new Headers(reqOptions!.headers));
       expect(headers['x-api-key']).toBe('test-key');
@@ -76,9 +76,9 @@ describe('AnthropicAdapter', () => {
 
       const res = await adapter.createResponse(makeUnifiedRequest());
       expect(res.content).toHaveLength(2);
-      expect(res.content[0].text).toBe('Thinking...');
-      expect(res.content[1].type).toBe('tool_call');
-      expect(res.content[1].toolCall?.function.name).toBe('search');
+      expect(res.content[0]!.text).toBe('Thinking...');
+      expect(res.content[1]!.type).toBe('tool_call');
+      expect(res.content[1]!.toolCall?.function.name).toBe('search');
     });
 
     it('handles system messages correctly', async () => {
@@ -181,7 +181,7 @@ describe('AnthropicAdapter', () => {
       const models = await adapter.listModels();
       expect(called).toBe(false);
       expect(models.length).toBeGreaterThan(0);
-      expect(models[0].provider).toBe('anthropic');
+      expect(models[0]!.provider).toBe('anthropic');
     });
   });
 

@@ -12,6 +12,7 @@ import { OpenAiProviderModule } from '@sirius/provider-openai';
 import { AnthropicProviderModule } from '@sirius/provider-anthropic';
 import { OllamaProviderModule } from '@sirius/provider-ollama';
 import { LlamactlProviderModule } from '@sirius/provider-llamactl';
+import { FromFileProviderModule } from '@sirius/provider-fromfile';
 import { GatewayService } from './gateway.service';
 import { ChatCompletionsController } from './controllers/chat-completions.controller';
 import { ResponsesController } from './controllers/responses.controller';
@@ -45,6 +46,7 @@ import { HealthController } from './controllers/health.controller';
     AnthropicProviderModule.forRootAsync(),
     OllamaProviderModule.forRootAsync(),
     LlamactlProviderModule.forRootAsync(),
+    FromFileProviderModule.forRootAsync(),
   ],
   controllers: [
     HealthController,

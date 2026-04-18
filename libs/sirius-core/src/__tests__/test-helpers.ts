@@ -10,7 +10,7 @@ export function mockFetch(handler: (req: Request | string, init?: RequestInit) =
   
   // Create a wrapper to normalize inputs into a Request object if desired, 
   // but for simplicity we'll just mock it as taking a Request or matching the handler.
-  const mockedFetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const mockedFetch = mock(async (input: Request | string | URL, init?: RequestInit) => {
     let req: Request;
     if (input instanceof Request) {
       req = input;

@@ -30,7 +30,9 @@
       "@sirius/provider-ollama": ["libs/provider-ollama/src"],
       "@sirius/provider-ollama/*": ["libs/provider-ollama/src/*"],
       "@sirius/provider-llamactl": ["libs/provider-llamactl/src"],
-      "@sirius/provider-llamactl/*": ["libs/provider-llamactl/src/*"]
+      "@sirius/provider-llamactl/*": ["libs/provider-llamactl/src/*"],
+      "@sirius/provider-fromfile": ["libs/provider-fromfile/src"],
+      "@sirius/provider-fromfile/*": ["libs/provider-fromfile/src/*"]
     }
   },
   "include": [

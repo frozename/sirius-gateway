@@ -136,11 +136,11 @@ describe('ResponsesController', () => {
       await controller.responses({} as any, mockReq, mockRes);
 
       const calls = mockResRaw.write.mock.calls;
-      const deltaCall = calls.find(call => call[0].includes('response.output_text.delta'));
+      const deltaCall = calls.find((call: unknown[]) => String(call[0]).includes('response.output_text.delta'));
       expect(deltaCall).toBeDefined();
       expect(deltaCall[0]).toContain('"delta":"Hello"');
 
-      const doneCall = calls.find(call => call[0].includes('response.completed'));
+      const doneCall = calls.find((call: unknown[]) => String(call[0]).includes('response.completed'));
       expect(doneCall).toBeDefined();
 
       expect(mockResRaw.end).toHaveBeenCalled();
@@ -159,10 +159,10 @@ describe('ResponsesController', () => {
       await controller.responses({} as any, mockReq, mockRes);
 
       const calls = mockResRaw.write.mock.calls;
-      const errorCall = calls.find(call => call[0].includes('"error":{"message":"Stream error"}'));
+      const errorCall = calls.find((call: unknown[]) => String(call[0]).includes('"error":{"message":"Stream error"}'));
       expect(errorCall).toBeDefined();
 
-      const unreachedCall = calls.find(call => call[0].includes('Unreached'));
+      const unreachedCall = calls.find((call: unknown[]) => String(call[0]).includes('Unreached'));
       expect(unreachedCall).toBeUndefined();
 
       expect(mockResRaw.end).toHaveBeenCalled();
@@ -182,10 +182,10 @@ describe('ResponsesController', () => {
       await controller.responses({} as any, mockReq, mockRes);
 
       const calls = mockResRaw.write.mock.calls;
-      const firstChunkCall = calls.find(call => call[0].includes('"delta":"1"'));
+      const firstChunkCall = calls.find((call: unknown[]) => String(call[0]).includes('"delta":"1"'));
       expect(firstChunkCall).toBeDefined();
       
-      const secondChunkCall = calls.find(call => call[0].includes('"delta":"2"'));
+      const secondChunkCall = calls.find((call: unknown[]) => String(call[0]).includes('"delta":"2"'));
       expect(secondChunkCall).toBeUndefined();
       
       expect(mockResRaw.end).toHaveBeenCalled();

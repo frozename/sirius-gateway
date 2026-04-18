@@ -127,8 +127,8 @@ describe('GatewayExceptionFilter', () => {
       filter.catch(error, mockHost);
       
       expect(loggerErrorSpy).toHaveBeenCalled();
-      expect(loggerErrorSpy.mock.calls[0][0]).toContain('GET /test-url → 500');
-      expect(loggerErrorSpy.mock.calls[0][1]).toBe('Error stack trace');
+      expect(loggerErrorSpy.mock.calls[0]![0]).toContain('GET /test-url → 500');
+      expect(loggerErrorSpy.mock.calls[0]![1]).toBe('Error stack trace');
       
       loggerErrorSpy.mockRestore();
     });

@@ -70,7 +70,7 @@ describe('StreamingObserver', () => {
   });
 
   test('captures token usage from usage events', async () => {
-    const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 };
+    const usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
     const events: UnifiedStreamEvent[] = [
       { type: 'content_delta', delta: 'done' },
       { type: 'usage', usage },
