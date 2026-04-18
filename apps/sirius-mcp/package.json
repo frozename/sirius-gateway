@@ -1,0 +1,30 @@
+{
+  "name": "@sirius/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Model Context Protocol server exposing sirius-gateway's operator surface — provider list, model aggregation, health.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "sirius-mcp": "./bin/sirius-mcp.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@nova/contracts": "file:../../../nova/packages/contracts",
+    "@nova/mcp-shared": "file:../../../nova/packages/mcp-shared",
+    "@sirius/provider-fromfile": "workspace:*",
+    "yaml": "^2.7.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.12",
+    "typescript": "^5.9.3"
+  }
+}
