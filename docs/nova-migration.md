@@ -1,9 +1,17 @@
 # Nova migration
 
+> **2026-04-18 — Nova extracted to a standalone repo.** Nova now lives at
+> `/Volumes/WorkSSD/repos/personal/nova` and ships as `@nova/contracts`.
+> sirius-gateway consumes it via `file:../nova`. The `libs/nova/` directory
+> was deleted; the `@sirius/nova` path alias is gone. The `nova` namespace
+> on `@sirius/core` still works — it re-exports `@nova/contracts` instead
+> of the in-tree copy. Everything below about the per-surface migration
+> plan remains accurate.
+
 Sirius is adopting **Nova** — a canonical, OpenAI-wire-compatible
 vocabulary for AI provider contracts — as its long-term type foundation.
-Nova lives at `libs/nova` and is exported from `@sirius/core` under a
-`nova` namespace during the transition.
+Nova lives at `@nova/contracts` (standalone repo) and is re-exported
+from `@sirius/core` under a `nova` namespace during the transition.
 
 ## Why
 
@@ -23,9 +31,9 @@ every compliant upstream out of the box.
 
 ## Repository shape
 
-- `libs/nova/` — canonical contracts + adapters. Seed of the eventual
-  standalone Sirius SDK published to npm. Consumed by sirius-gateway,
-  llamactl, and embersynth.
+- `@nova/contracts` (standalone repo at `/Volumes/WorkSSD/repos/personal/nova`) —
+  canonical contracts + adapters. Consumed by sirius-gateway, llamactl,
+  and embersynth via `file:../nova` until a registry publish lands.
 - `libs/sirius-core/` — gateway-level types (RoutingDecision,
   provider registry DI) + legacy types kept for migration. Re-exports
   nova under the `nova` namespace.

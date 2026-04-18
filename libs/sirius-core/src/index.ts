@@ -17,4 +17,4 @@ export * from './core.module';
  * provider adapter and GatewayService surface has migrated. See
  * `docs/nova-migration.md` for the per-surface plan.
  */
-export * as nova from '@sirius/nova';
+export * as nova from '@nova/contracts';
