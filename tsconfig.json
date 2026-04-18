@@ -28,7 +28,9 @@
       "@sirius/provider-anthropic": ["libs/provider-anthropic/src"],
       "@sirius/provider-anthropic/*": ["libs/provider-anthropic/src/*"],
       "@sirius/provider-ollama": ["libs/provider-ollama/src"],
-      "@sirius/provider-ollama/*": ["libs/provider-ollama/src/*"]
+      "@sirius/provider-ollama/*": ["libs/provider-ollama/src/*"],
+      "@sirius/provider-llamactl": ["libs/provider-llamactl/src"],
+      "@sirius/provider-llamactl/*": ["libs/provider-llamactl/src/*"]
     }
   },
   "include": [

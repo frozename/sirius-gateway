@@ -53,6 +53,10 @@
       "name": "@sirius/provider-anthropic",
       "version": "0.1.0",
     },
+    "libs/provider-llamactl": {
+      "name": "@sirius/provider-llamactl",
+      "version": "0.1.0",
+    },
     "libs/provider-ollama": {
       "name": "@sirius/provider-ollama",
       "version": "0.1.0",
@@ -142,6 +146,8 @@
     "@sirius/policy": ["@sirius/policy@workspace:libs/sirius-policy"],
 
     "@sirius/provider-anthropic": ["@sirius/provider-anthropic@workspace:libs/provider-anthropic"],
+
+    "@sirius/provider-llamactl": ["@sirius/provider-llamactl@workspace:libs/provider-llamactl"],
 
     "@sirius/provider-ollama": ["@sirius/provider-ollama@workspace:libs/provider-ollama"],
 
