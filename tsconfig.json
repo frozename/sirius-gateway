@@ -9,6 +9,8 @@
     "paths": {
       "@sirius/core": ["libs/sirius-core/src"],
       "@sirius/core/*": ["libs/sirius-core/src/*"],
+      "@sirius/nova": ["libs/nova/src"],
+      "@sirius/nova/*": ["libs/nova/src/*"],
       "@sirius/compat-openai": ["libs/sirius-compat-openai/src"],
       "@sirius/compat-openai/*": ["libs/sirius-compat-openai/src/*"],
       "@sirius/routing": ["libs/sirius-routing/src"],

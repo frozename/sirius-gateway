@@ -42,6 +42,13 @@
         "typescript": "^5.7.0",
       },
     },
+    "libs/nova": {
+      "name": "@sirius/nova",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "4.3.6",
+      },
+    },
     "libs/provider-anthropic": {
       "name": "@sirius/provider-anthropic",
       "version": "0.1.0",
@@ -127,6 +134,8 @@
     "@sirius/core": ["@sirius/core@workspace:libs/sirius-core"],
 
     "@sirius/model-registry": ["@sirius/model-registry@workspace:libs/sirius-model-registry"],
+
+    "@sirius/nova": ["@sirius/nova@workspace:libs/nova"],
 
     "@sirius/observability": ["@sirius/observability@workspace:libs/sirius-observability"],
 
@@ -301,6 +310,8 @@
     "undici-types": ["undici-types@6.21.0", "", {}, "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="],
 
     "wrappy": ["wrappy@1.0.2", "", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="],
+
+    "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
 
     "dotenv-expand/dotenv": ["dotenv@16.6.1", "", {}, "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow=="],
 
