@@ -135,6 +135,30 @@ Every provider lives in `libs/provider-<name>/` and implements
 - Pricing join (dollar amounts) is llamactl's N.3.4 — leave
   `estimated_cost_usd` blank here.
 
+## Reload endpoint contract (cross-repo)
+
+`POST /providers/reload` (see `apps/sirius-api/src/controllers/health.controller.ts`)
+is the canonical hot-reload path for `sirius-providers.yaml`. Both
+operators-via-CLI and the llamactl sirius gateway workload handler
+(`packages/remote/src/workload/gateway-handlers/sirius.ts` on the
+llamactl side) call this endpoint.
+
+```
+POST /providers/reload
+Authorization: Bearer <token>
+Content-Type:  application/json
+Body:          {"source":"llamactl-workload","name":"<workload-name>"}
+
+200 → {ok:true, path, added:[...], removed:[...], kept:[...], skipped:[...]}
+```
+
+`FromFileReloadService.reload()` re-scans the YAML, reconciles the
+ProviderRegistry (add new, unregister deleted, keep unchanged), and
+returns the diff. The llamactl handler parses this body to decide
+whether to mark the manifest Running/Failed. Keep the response shape
+stable; breaking it without a coordinated bump on the llamactl side
+silently drops workload-status fidelity.
+
 ## Testing
 
 - `bun:test`. Controller tests use manual mocks

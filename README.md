@@ -113,6 +113,12 @@ unchanged.
   providers; override via env / config.
 - **Policy** — retry count, circuit-breaker thresholds, per-provider
   rate limits — all configurable; see `libs/sirius-policy/src/`.
+- **Hot reload** — `POST /providers/reload` (bearer-auth) re-reads
+  `sirius-providers.yaml` and reconciles the registry in place
+  (add new, unregister deleted, keep unchanged). Used by the
+  `llamactl` sirius gateway workload handler and by operators after
+  hand-editing the YAML. Returns a diff for audit:
+  `{ok, path, added, removed, kept, skipped}`.
 
 ## Usage metering
 
