@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "Unified AI Gateway — OpenAI-compatible API for multiple providers",
+  "license": "MIT",
   "workspaces": [
     "apps/*",
     "libs/*"
