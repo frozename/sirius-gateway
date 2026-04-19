@@ -6,6 +6,7 @@ describe('HealthController', () => {
   let mockGateway: any;
   let mockRegistry: any;
   let mockPolicy: any;
+  let mockReloader: any;
 
   beforeEach(() => {
     mockGateway = {
@@ -20,7 +21,9 @@ describe('HealthController', () => {
       getCircuitBreakerState: mock(),
     };
 
-    controller = new HealthController(mockGateway, mockRegistry, mockPolicy);
+    mockReloader = { reload: mock() };
+
+    controller = new HealthController(mockGateway, mockRegistry, mockPolicy, mockReloader);
   });
 
   describe('health', () => {
@@ -114,6 +117,40 @@ describe('HealthController', () => {
 
       expect(res.status).toBe('degraded');
       expect(res.providers).toHaveLength(1);
+    });
+  });
+
+  describe('providersReload', () => {
+    it('returns the reconciliation report from the reloader', async () => {
+      mockReloader.reload.mockReturnValue({
+        path: '/tmp/sirius-providers.yaml',
+        added: ['openai'],
+        removed: ['anthropic'],
+        kept: ['together'],
+        skipped: [],
+      });
+      const res = await controller.providersReload();
+      expect(res.ok).toBe(true);
+      expect(res.path).toBe('/tmp/sirius-providers.yaml');
+      expect(res.added).toEqual(['openai']);
+      expect(res.removed).toEqual(['anthropic']);
+      expect(res.kept).toEqual(['together']);
+      expect(res.skipped).toEqual([]);
+      expect(res.timestamp).toBeDefined();
+    });
+
+    it('surfaces skipped entries (malformed yaml rows) on the report', async () => {
+      mockReloader.reload.mockReturnValue({
+        path: '/tmp/x.yaml',
+        added: [],
+        removed: [],
+        kept: [],
+        skipped: [{ name: 'broken', reason: 'has no baseUrl and no default' }],
+      });
+      const res = await controller.providersReload();
+      expect(res.skipped).toEqual([
+        { name: 'broken', reason: 'has no baseUrl and no default' },
+      ]);
     });
   });
 });

@@ -1,4 +1,4 @@
-import { Module, type DynamicModule } from '@nestjs/common';
+import { Injectable, Module, type DynamicModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProviderRegistry, nova } from '@sirius/core';
 import type { AiProvider } from '@sirius/core';
@@ -173,29 +173,144 @@ function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider {
   };
 }
 
+/**
+ * Build (or rebuild) the set of from-file adapters, update the
+ * registry, and return a reconciliation report.
+ *
+ * Pure-ish — the only side effect is registering / unregistering
+ * on the passed-in registry. Shared by the boot factory below + the
+ * reload service.
+ */
+export interface FromFileReloadResult {
+  path: string;
+  added: string[];
+  removed: string[];
+  kept: string[];
+  skipped: Array<{ name: string; reason: string }>;
+}
+
+export function reconcileFromFileProviders(
+  path: string,
+  registry: ProviderRegistry,
+  /** Current from-file-owned provider names. Boot passes `[]`; a
+   *  reload call passes the names registered in the previous
+   *  reconciliation so this function knows which to unregister. */
+  previouslyOwned: readonly string[],
+): { result: FromFileReloadResult; ownedAfter: string[] } {
+  const entries = loadProvidersFile(path);
+  const wanted = new Set(entries.map((e) => e.name));
+  const prev = new Set(previouslyOwned);
+
+  // Remove providers that disappeared from the file.
+  const removed: string[] = [];
+  for (const name of prev) {
+    if (!wanted.has(name)) {
+      registry.unregister(name);
+      removed.push(name);
+    }
+  }
+
+  const added: string[] = [];
+  const kept: string[] = [];
+  const skipped: FromFileReloadResult['skipped'] = [];
+  const ownedAfter: string[] = [];
+  for (const entry of entries) {
+    try {
+      const core = novaProviderFor(entry);
+      const adapter = toSiriusAdapter(entry.name, core);
+      const wasPresent = registry.get(entry.name) !== undefined;
+      registry.register(adapter);
+      ownedAfter.push(entry.name);
+      if (wasPresent && prev.has(entry.name)) {
+        kept.push(entry.name);
+      } else {
+        added.push(entry.name);
+      }
+    } catch (err) {
+      skipped.push({ name: entry.name, reason: (err as Error).message });
+    }
+  }
+  return {
+    result: { path, added, removed, kept, skipped },
+    ownedAfter,
+  };
+}
+
+/**
+ * Runtime reload hook. Holds the resolved path + the set of
+ * provider names the from-file loader currently owns so the
+ * admin endpoint can re-scan the yaml and reconcile the registry
+ * without restarting sirius.
+ */
+@Injectable()
+export class FromFileReloadService {
+  private path: string;
+  private owned: readonly string[] = [];
+
+  constructor(
+    config: ConfigService,
+    private readonly registry: ProviderRegistry,
+  ) {
+    this.path = resolvePath(config);
+  }
+
+  /** Called once at boot by the FROMFILE_ADAPTERS factory so the
+   *  reload service tracks which providers are from-file-owned. */
+  setOwned(names: readonly string[]): void {
+    this.owned = [...names];
+  }
+
+  getPath(): string {
+    return this.path;
+  }
+
+  /** Override the path at runtime (tests). */
+  setPath(path: string): void {
+    this.path = path;
+  }
+
+  reload(): FromFileReloadResult {
+    const { result, ownedAfter } = reconcileFromFileProviders(
+      this.path,
+      this.registry,
+      this.owned,
+    );
+    this.owned = ownedAfter;
+    return result;
+  }
+}
+
+function resolvePath(config: ConfigService): string {
+  return (
+    config.get<string>('LLAMACTL_PROVIDERS_FILE', '') || resolveFilePath()
+  );
+}
+
 @Module({})
 export class FromFileProviderModule {
   static forRootAsync(): DynamicModule {
     return {
       module: FromFileProviderModule,
       providers: [
+        FromFileReloadService,
         {
           provide: 'FROMFILE_ADAPTERS',
           useFactory: (
             config: ConfigService,
             registry: ProviderRegistry,
+            reloader: FromFileReloadService,
           ): AiProvider[] => {
-            const path =
-              config.get<string>('LLAMACTL_PROVIDERS_FILE', '') ||
-              resolveFilePath();
+            const path = resolvePath(config);
             const entries = loadProvidersFile(path);
             const adapters: AiProvider[] = [];
+            const owned: string[] = [];
             for (const entry of entries) {
               try {
                 const core = novaProviderFor(entry);
                 const adapter = toSiriusAdapter(entry.name, core);
                 registry.register(adapter);
                 adapters.push(adapter);
+                owned.push(entry.name);
               } catch (err) {
                 // Fail-soft — one bad entry shouldn't crash sirius's
                 // boot. Logging hook belongs to the caller.
@@ -205,12 +320,13 @@ export class FromFileProviderModule {
                 );
               }
             }
+            reloader.setOwned(owned);
             return adapters;
           },
-          inject: [ConfigService, ProviderRegistry],
+          inject: [ConfigService, ProviderRegistry, FromFileReloadService],
         },
       ],
-      exports: ['FROMFILE_ADAPTERS'],
+      exports: ['FROMFILE_ADAPTERS', FromFileReloadService],
     };
   }
 }

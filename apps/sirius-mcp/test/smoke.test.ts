@@ -191,10 +191,16 @@ describe('@sirius/mcp surface', () => {
     expect(parsed.remainingCount).toBe(1);
   });
 
-  test('sirius.providers.deregister wet mode returns not-implemented envelope', async () => {
+  test('sirius.providers.deregister wet mode rewrites yaml + posts /providers/reload', async () => {
+    const yamlPath = join(runtimeDir, 'sirius-providers.yaml');
     writeFileSync(
-      join(runtimeDir, 'sirius-providers.yaml'),
-      stringifyYaml({ providers: [{ name: 'openai', kind: 'openai' }] }),
+      yamlPath,
+      stringifyYaml({
+        providers: [
+          { name: 'openai', kind: 'openai', baseUrl: 'https://a/v1' },
+          { name: 'anthropic', kind: 'anthropic', baseUrl: 'https://b/v1' },
+        ],
+      }),
     );
     const client = await connected();
     const result = await client.callTool({
@@ -203,12 +209,42 @@ describe('@sirius/mcp surface', () => {
     });
     const parsed = JSON.parse(textOf(result)) as {
       ok: boolean;
-      reason: string;
-      message: string;
+      mode: string;
+      removed: { name: string };
+      remaining: Array<{ name: string }>;
+      remainingCount: number;
+      reload: { ok: boolean; status: number };
+      note: string;
     };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.mode).toBe('wet');
+    expect(parsed.removed.name).toBe('openai');
+    expect(parsed.remainingCount).toBe(1);
+    expect(parsed.remaining[0]!.name).toBe('anthropic');
+    // SIRIUS_URL points at 127.0.0.1:1 (unreachable) → reload POST
+    // fails, but the YAML write already succeeded.
+    expect(parsed.reload.ok).toBe(false);
+    expect(parsed.note).toContain('reload POST failed');
+
+    // YAML on disk is the post-removal shape.
+    const body = readFileSync(yamlPath, 'utf8');
+    expect(body).toContain('anthropic');
+    expect(body).not.toContain('name: openai');
+  });
+
+  test('sirius.providers.deregister wet mode on absent provider → provider-not-found', async () => {
+    writeFileSync(
+      join(runtimeDir, 'sirius-providers.yaml'),
+      stringifyYaml({ providers: [{ name: 'openai', kind: 'openai' }] }),
+    );
+    const client = await connected();
+    const result = await client.callTool({
+      name: 'sirius.providers.deregister',
+      arguments: { name: 'does-not-exist', dryRun: false },
+    });
+    const parsed = JSON.parse(textOf(result)) as { ok: boolean; reason: string };
     expect(parsed.ok).toBe(false);
-    expect(parsed.reason).toBe('wet-mode-not-implemented');
-    expect(parsed.message).toContain('K.7.2');
+    expect(parsed.reason).toBe('provider-not-found');
   });
 
   test('sirius.health.all gracefully surfaces the no-gateway case', async () => {

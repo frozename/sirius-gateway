@@ -9,6 +9,16 @@ export class ProviderRegistry {
     this.providers.set(provider.name, provider);
   }
 
+  /**
+   * Remove a provider by name. Returns `true` when the provider was
+   * present + got removed, `false` when no provider by that name
+   * existed. Used by the `/providers/reload` endpoint + the future
+   * wet-mode `sirius.providers.deregister` MCP tool.
+   */
+  unregister(name: string): boolean {
+    return this.providers.delete(name);
+  }
+
   get(name: string): AiProvider | undefined {
     return this.providers.get(name);
   }

@@ -1,9 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { z } from 'zod';
+import { stringify as stringifyYaml } from 'yaml';
 import { appendAudit, toTextContent } from '@nova/mcp-shared';
 import {
   loadProvidersFile,
   resolveFilePath as resolveProvidersFilePath,
+  type SiriusProviderFileEntry,
 } from '@sirius/provider-fromfile';
 
 /**
@@ -44,6 +48,38 @@ async function fetchJson(path: string): Promise<{ ok: boolean; status: number; b
   } catch (err) {
     return { ok: false, status: 0, body: null, error: (err as Error).message };
   }
+}
+
+async function postJson(path: string): Promise<{ ok: boolean; status: number; body: unknown; error?: string }> {
+  const url = `${siriusBaseUrl()}${path}`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    const text = await res.text();
+    let body: unknown = text;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // keep as string
+    }
+    return { ok: res.ok, status: res.status, body };
+  } catch (err) {
+    return { ok: false, status: 0, body: null, error: (err as Error).message };
+  }
+}
+
+/**
+ * Atomic YAML writer. Writes to `<path>.tmp-<rand>` then renames
+ * onto the target — a partial write never leaves a truncated file
+ * on disk.
+ */
+function atomicWriteYaml(path: string, payload: { providers: SiriusProviderFileEntry[] }): void {
+  const tmp = join(dirname(path), `.${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.yaml.tmp`);
+  writeFileSync(tmp, stringifyYaml(payload), 'utf8');
+  renameSync(tmp, path);
 }
 
 export function buildSiriusMcpServer(opts?: { name?: string; version?: string }): McpServer {
@@ -136,13 +172,32 @@ export function buildSiriusMcpServer(opts?: { name?: string; version?: string })
         },
       });
       if (!dryRun) {
+        if (!target) {
+          return toTextContent({
+            ok: false,
+            reason: 'provider-not-found',
+            message: `provider '${input.name}' is not in ${path}`,
+            path,
+          });
+        }
+        atomicWriteYaml(path, { providers: remaining });
+        const reload = await postJson('/providers/reload');
         return toTextContent({
-          ok: false,
-          reason: 'wet-mode-not-implemented',
-          message:
-            'wet deregister requires the /providers/reload endpoint + atomic sirius-providers.yaml write — ships in K.7.2. Pass dryRun:true (default) to preview what would be removed.',
+          ok: true,
+          mode: 'wet',
           path,
-          target: target ? { name: target.name, kind: target.kind } : null,
+          removed: { name: target.name, kind: target.kind },
+          remainingCount: remaining.length,
+          remaining: remaining.map((p) => ({ name: p.name, kind: p.kind })),
+          reload: {
+            ok: reload.ok,
+            status: reload.status,
+            ...(reload.error ? { error: reload.error } : {}),
+            body: reload.body,
+          },
+          note: reload.ok
+            ? 'sirius-providers.yaml rewritten + gateway reloaded'
+            : 'sirius-providers.yaml rewritten; reload POST failed — operator should hit /providers/reload manually or restart sirius',
         });
       }
       return toTextContent({
