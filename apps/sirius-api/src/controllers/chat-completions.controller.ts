@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { OpenAiChatCompletionRequest } from '@sirius/compat-openai';
 import { OpenAiCompatService } from '@sirius/compat-openai';
+import { UsageRecorderService } from '@sirius/observability';
 import { GatewayService } from '../gateway.service';
 
 @Controller('v1')
@@ -10,6 +11,7 @@ export class ChatCompletionsController {
   constructor(
     private readonly gateway: GatewayService,
     private readonly compat: OpenAiCompatService,
+    private readonly usageRecorder: UsageRecorderService,
   ) {}
 
   @Post('chat/completions')
@@ -83,6 +85,17 @@ export class ChatCompletionsController {
       } else {
         const response = await this.gateway.createResponse(request);
         const formatted = this.compat.formatChatCompletionResponse(response);
+        this.usageRecorder.record({
+          provider: response._gatewayMeta.provider,
+          model: response._gatewayMeta.model,
+          kind: 'chat',
+          promptTokens: response.usage.inputTokens,
+          completionTokens: response.usage.outputTokens,
+          totalTokens: response.usage.totalTokens,
+          latencyMs: response.latencyMs,
+          requestId,
+          route: response._gatewayMeta.strategy,
+        });
         res.header('X-Request-Id', requestId);
         return res.send(formatted);
       }

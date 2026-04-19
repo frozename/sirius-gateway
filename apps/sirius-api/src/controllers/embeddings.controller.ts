@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { OpenAiEmbeddingRequest } from '@sirius/compat-openai';
 import { OpenAiCompatService } from '@sirius/compat-openai';
+import { UsageRecorderService } from '@sirius/observability';
 import { GatewayService } from '../gateway.service';
 
 @Controller('v1')
@@ -10,6 +11,7 @@ export class EmbeddingsController {
   constructor(
     private readonly gateway: GatewayService,
     private readonly compat: OpenAiCompatService,
+    private readonly usageRecorder: UsageRecorderService,
   ) {}
 
   @Post('embeddings')
@@ -25,6 +27,16 @@ export class EmbeddingsController {
       const request = this.compat.parseEmbeddingRequest(body, requestId);
       const response = await this.gateway.createEmbeddings(request);
       const formatted = this.compat.formatEmbeddingResponse(response);
+      this.usageRecorder.record({
+        provider: response.provider,
+        model: response.model,
+        kind: 'embedding',
+        promptTokens: response.usage.inputTokens,
+        completionTokens: response.usage.outputTokens,
+        totalTokens: response.usage.totalTokens,
+        latencyMs: response.latencyMs,
+        requestId,
+      });
       res.header('X-Request-Id', requestId);
       return res.send(formatted);
     } catch (error) {

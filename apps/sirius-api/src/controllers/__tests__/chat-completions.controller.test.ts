@@ -6,6 +6,7 @@ describe('ChatCompletionsController', () => {
   let controller: ChatCompletionsController;
   let mockGateway: any;
   let mockCompat: any;
+  let mockUsageRecorder: any;
   let mockReq: any;
   let mockRes: any;
   let mockResRaw: any;
@@ -26,7 +27,9 @@ describe('ChatCompletionsController', () => {
       formatError: mock(),
     };
 
-    controller = new ChatCompletionsController(mockGateway, mockCompat);
+    mockUsageRecorder = { record: mock() };
+
+    controller = new ChatCompletionsController(mockGateway, mockCompat, mockUsageRecorder);
 
     mockReq = { id: 'req-123' };
 
@@ -53,7 +56,19 @@ describe('ChatCompletionsController', () => {
     it('calls compat -> gateway -> compat -> res.send()', async () => {
       const body = { model: 'test' };
       const parsedReq = { model: 'test', stream: false };
-      const gatewayRes = { id: 'res-1' };
+      const gatewayRes = {
+        id: 'res-1',
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+        latencyMs: 123,
+        _gatewayMeta: {
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          strategy: 'round-robin',
+          tokensUsed: 15,
+          providerLatencyMs: 120,
+          fallbackUsed: false,
+        },
+      };
       const formattedRes = { id: 'formatted-1' };
 
       mockCompat.parseChatCompletionRequest.mockReturnValue(parsedReq);
@@ -67,14 +82,32 @@ describe('ChatCompletionsController', () => {
       expect(mockCompat.formatChatCompletionResponse).toHaveBeenCalledWith(gatewayRes);
       expect(mockRes.header).toHaveBeenCalledWith('X-Request-Id', 'req-123');
       expect(mockRes.send).toHaveBeenCalledWith(formattedRes);
+      expect(mockUsageRecorder.record).toHaveBeenCalledTimes(1);
+      expect(mockUsageRecorder.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          kind: 'chat',
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+          latencyMs: 123,
+          requestId: 'req-123',
+          route: 'round-robin',
+        }),
+      );
     });
 
     it('sets X-Request-Id generated if req.id is missing', async () => {
       mockReq.id = undefined;
       const parsedReq = { model: 'test', stream: false };
       mockCompat.parseChatCompletionRequest.mockReturnValue(parsedReq);
-      mockGateway.createResponse.mockResolvedValue({});
-      
+      mockGateway.createResponse.mockResolvedValue({
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        latencyMs: 0,
+        _gatewayMeta: { provider: 'x', model: 'y', strategy: 'z' },
+      });
+
       await controller.chatCompletions({} as any, mockReq, mockRes);
       
       const reqId = mockCompat.parseChatCompletionRequest.mock.calls[0][1];

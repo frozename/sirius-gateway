@@ -3,3 +3,4 @@ export * from './observability.module';
 export * from './logging.config';
 export * from './streaming-observer';
 export * from './latency-tracker.service';
+export * from './usage-recorder.service';
