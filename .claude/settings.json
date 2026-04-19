@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun test*)",
+      "Bash(bun install*)",
+      "Bash(bun run typecheck*)",
+      "Bash(bun run dev*)",
+      "Bash(bun run start*)",
+      "Bash(bun run build*)",
+      "Bash(bun run lint*)",
+      "Bash(bun run format*)",
+      "Bash(bun apps/sirius-mcp/bin/sirius-mcp.ts*)",
+      "Bash(bunx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show:*)",
+      "Bash(gh api:*)",
+      "Bash(gh pr:*)"
+    ]
+  }
+}
