@@ -78,6 +78,7 @@ describe('@sirius/mcp surface', () => {
     expect(names).toEqual([
       'sirius.health.all',
       'sirius.models.list',
+      'sirius.providers.deregister',
       'sirius.providers.list',
     ]);
   });
@@ -123,6 +124,91 @@ describe('@sirius/mcp surface', () => {
     const audits = auditLines();
     expect(audits).toHaveLength(1);
     expect(audits[0]!.tool).toBe('sirius.providers.list');
+  });
+
+  test('sirius.providers.deregister dry-run reports target + remaining + leaves YAML untouched', async () => {
+    const yamlPath = join(runtimeDir, 'sirius-providers.yaml');
+    const original = stringifyYaml({
+      providers: [
+        { name: 'openai', kind: 'openai', baseUrl: 'https://a/v1', apiKeyRef: '$OPENAI_KEY' },
+        { name: 'anthropic', kind: 'anthropic', baseUrl: 'https://b/v1', apiKeyRef: '$ANT_KEY' },
+        { name: 'together', kind: 'openai', baseUrl: 'https://c/v1', apiKeyRef: '$TGTHR_KEY' },
+      ],
+    });
+    writeFileSync(yamlPath, original);
+
+    const client = await connected();
+    const result = await client.callTool({
+      name: 'sirius.providers.deregister',
+      arguments: { name: 'anthropic' }, // dryRun default true
+    });
+    const parsed = JSON.parse(textOf(result)) as {
+      ok: boolean;
+      mode: string;
+      wasPresent: boolean;
+      target: { name: string; apiKeyRef: string | null } | null;
+      remainingCount: number;
+      remaining: Array<{ name: string; kind: string }>;
+      note: string;
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.mode).toBe('dry-run');
+    expect(parsed.wasPresent).toBe(true);
+    expect(parsed.target!.name).toBe('anthropic');
+    // apiKeyRef is a reference, never a resolved secret.
+    expect(parsed.target!.apiKeyRef?.startsWith('$')).toBe(true);
+    expect(parsed.remainingCount).toBe(2);
+    expect(parsed.remaining.map((p) => p.name).sort()).toEqual(['openai', 'together']);
+
+    // YAML on disk unchanged.
+    expect(readFileSync(yamlPath, 'utf8')).toBe(original);
+
+    const audits = auditLines();
+    expect(audits[0]!.tool).toBe('sirius.providers.deregister');
+    expect((audits[0]!.result as { wet: boolean }).wet).toBe(false);
+  });
+
+  test('sirius.providers.deregister dry-run flags unknown provider as wasPresent:false', async () => {
+    const yamlPath = join(runtimeDir, 'sirius-providers.yaml');
+    writeFileSync(
+      yamlPath,
+      stringifyYaml({ providers: [{ name: 'openai', kind: 'openai' }] }),
+    );
+    const client = await connected();
+    const result = await client.callTool({
+      name: 'sirius.providers.deregister',
+      arguments: { name: 'does-not-exist' },
+    });
+    const parsed = JSON.parse(textOf(result)) as {
+      ok: boolean;
+      wasPresent: boolean;
+      target: null;
+      remainingCount: number;
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.wasPresent).toBe(false);
+    expect(parsed.target).toBeNull();
+    expect(parsed.remainingCount).toBe(1);
+  });
+
+  test('sirius.providers.deregister wet mode returns not-implemented envelope', async () => {
+    writeFileSync(
+      join(runtimeDir, 'sirius-providers.yaml'),
+      stringifyYaml({ providers: [{ name: 'openai', kind: 'openai' }] }),
+    );
+    const client = await connected();
+    const result = await client.callTool({
+      name: 'sirius.providers.deregister',
+      arguments: { name: 'openai', dryRun: false },
+    });
+    const parsed = JSON.parse(textOf(result)) as {
+      ok: boolean;
+      reason: string;
+      message: string;
+    };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.reason).toBe('wet-mode-not-implemented');
+    expect(parsed.message).toContain('K.7.2');
   });
 
   test('sirius.health.all gracefully surfaces the no-gateway case', async () => {

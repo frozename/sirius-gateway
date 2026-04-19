@@ -102,6 +102,71 @@ export function buildSiriusMcpServer(opts?: { name?: string; version?: string })
   );
 
   server.registerTool(
+    'sirius.providers.deregister',
+    {
+      title: 'Deregister a provider (dry-run today)',
+      description:
+        'Report what would happen if a provider were removed from sirius-providers.yaml. Dry-run only in this slice: no file mutation, no gateway reload. Returns the provider block that would be deleted + the list of remaining providers. Wet mode returns a deliberate not-implemented error pointing at the K.7.2 slice that wires up /providers/reload and atomic YAML writes. The cost-guardian tier-3 action calls this tool with dryRun:true; operators performing a wet deregister run it through llamactl directly.',
+      inputSchema: {
+        name: z
+          .string()
+          .min(1)
+          .describe('Provider name exactly as it appears in sirius-providers.yaml.'),
+        dryRun: z
+          .boolean()
+          .default(true)
+          .describe('When false, attempt a wet deregister; currently returns not-implemented.'),
+        path: z.string().optional().describe('Override path to sirius-providers.yaml.'),
+      },
+    },
+    async (input) => {
+      const dryRun = input.dryRun ?? true;
+      const path = input.path ?? resolveProvidersFilePath();
+      const providers = loadProvidersFile(path);
+      const target = providers.find((p) => p.name === input.name);
+      const remaining = providers.filter((p) => p.name !== input.name);
+      appendAudit({
+        server: SERVER_SLUG,
+        tool: 'sirius.providers.deregister',
+        input: { name: input.name, dryRun, path },
+        result: {
+          wasPresent: target !== undefined,
+          remainingCount: remaining.length,
+          wet: !dryRun,
+        },
+      });
+      if (!dryRun) {
+        return toTextContent({
+          ok: false,
+          reason: 'wet-mode-not-implemented',
+          message:
+            'wet deregister requires the /providers/reload endpoint + atomic sirius-providers.yaml write — ships in K.7.2. Pass dryRun:true (default) to preview what would be removed.',
+          path,
+          target: target ? { name: target.name, kind: target.kind } : null,
+        });
+      }
+      return toTextContent({
+        ok: true,
+        mode: 'dry-run',
+        path,
+        wasPresent: target !== undefined,
+        target: target
+          ? {
+              name: target.name,
+              kind: target.kind,
+              baseUrl: target.baseUrl ?? null,
+              displayName: target.displayName ?? null,
+              apiKeyRef: target.apiKeyRef ?? null,
+            }
+          : null,
+        remainingCount: remaining.length,
+        remaining: remaining.map((p) => ({ name: p.name, kind: p.kind })),
+        note: 'dry-run — sirius-providers.yaml not modified; no gateway reload',
+      });
+    },
+  );
+
+  server.registerTool(
     'sirius.health.all',
     {
       title: 'Gateway + provider health roll-up',
