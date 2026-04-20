@@ -76,6 +76,8 @@ describe('@sirius/mcp surface', () => {
     const list = await client.listTools();
     const names = list.tools.map((t) => t.name).sort();
     expect(names).toEqual([
+      'sirius.chat',
+      'sirius.embed',
       'sirius.health.all',
       'sirius.models.list',
       'sirius.providers.deregister',

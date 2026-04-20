@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { stringify as stringifyYaml } from 'yaml';
 import { appendAudit, toTextContent } from '@nova/mcp-shared';
+import { ChatMessageSchema, UnifiedEmbeddingRequestSchema } from '@nova/contracts';
 import {
   loadProvidersFile,
   resolveFilePath as resolveProvidersFilePath,
@@ -50,22 +51,25 @@ async function fetchJson(path: string): Promise<{ ok: boolean; status: number; b
   }
 }
 
-async function postJson(path: string): Promise<{ ok: boolean; status: number; body: unknown; error?: string }> {
+async function postJson(
+  path: string,
+  body: unknown = {},
+): Promise<{ ok: boolean; status: number; body: unknown; error?: string }> {
   const url = `${siriusBaseUrl()}${path}`;
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify(body),
     });
     const text = await res.text();
-    let body: unknown = text;
+    let parsed: unknown = text;
     try {
-      body = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
       // keep as string
     }
-    return { ok: res.ok, status: res.status, body };
+    return { ok: res.ok, status: res.status, body: parsed };
   } catch (err) {
     return { ok: false, status: 0, body: null, error: (err as Error).message };
   }
@@ -245,6 +249,54 @@ export function buildSiriusMcpServer(opts?: { name?: string; version?: string })
         gateway,
         providers,
       });
+    },
+  );
+
+  const ChatCompletionRequestSchema = z.looseObject({
+    model: z.string(),
+    messages: z.array(ChatMessageSchema).min(1),
+    temperature: z.number().optional(),
+    max_tokens: z.number().int().positive().optional(),
+  });
+
+  server.registerTool(
+    'sirius.chat',
+    {
+      title: 'Chat completions via sirius gateway',
+      description:
+        'Non-streaming chat completion through sirius. POSTs to /v1/chat/completions and returns the full OpenAI-compatible response. The `stream` parameter is accepted but coerced to false — MCP tools are one-shot, so streaming is out of scope in this surface. Provider-specific extensions on the request pass through unchanged.',
+      inputSchema: ChatCompletionRequestSchema.shape,
+    },
+    async (input) => {
+      const body = { ...input, stream: false };
+      const result = await postJson('/v1/chat/completions', body);
+      appendAudit({
+        server: SERVER_SLUG,
+        tool: 'sirius.chat',
+        input: { model: input.model, messageCount: input.messages.length },
+        result: { status: result.status, ok: result.ok },
+      });
+      return toTextContent(result);
+    },
+  );
+
+  server.registerTool(
+    'sirius.embed',
+    {
+      title: 'Embeddings via sirius gateway',
+      description:
+        'Embedding vectors through sirius. POSTs to /v1/embeddings and returns the full OpenAI-compatible response. Provider-specific extensions on the request pass through unchanged.',
+      inputSchema: UnifiedEmbeddingRequestSchema.shape,
+    },
+    async (input) => {
+      const result = await postJson('/v1/embeddings', input);
+      appendAudit({
+        server: SERVER_SLUG,
+        tool: 'sirius.embed',
+        input: { model: input.model },
+        result: { status: result.status, ok: result.ok },
+      });
+      return toTextContent(result);
     },
   );
 
