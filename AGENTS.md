@@ -159,6 +159,41 @@ whether to mark the manifest Running/Failed. Keep the response shape
 stable; breaking it without a coordinated bump on the llamactl side
 silently drops workload-status fidelity.
 
+## sirius-mcp tool inventory (M.2, M.4)
+
+`apps/sirius-mcp` exposes 6 MCP tools via `McpServer.registerTool`.
+All tools share a single bearer auth envelope and emit one audit
+entry per invocation via `@nova/mcp-shared`'s `appendAudit`
+(written under `~/.llamactl/mcp/audit/sirius.jsonl` by default).
+
+Read-only tools:
+
+- `sirius.providers.list` — lists registered providers + reload
+  source.
+- `sirius.models.list` — aggregated `/v1/models` catalog across
+  providers.
+- `sirius.health.all` — rolled-up health per provider adapter.
+
+Mutation tools (dry-run previews + wet-run paths):
+
+- `sirius.providers.deregister` — deregisters a named provider.
+  Dry-run returns the preview; wet-run performs the mutation.
+
+Chat + embeddings tools (M.4 passthrough):
+
+- `sirius.chat` — POST `/v1/chat/completions` through sirius. Input
+  is validated with `@nova/contracts`' `ChatMessageSchema`; if the
+  caller passes `stream: true` it is coerced to `false` in the
+  forwarded body (MCP tools are one-shot in SDK 1.29.0). The full
+  OpenAI-compatible response is returned in the tool envelope.
+- `sirius.embed` — POST `/v1/embeddings` through sirius using the
+  `UnifiedEmbeddingRequestSchema` shape from `@nova/contracts`.
+
+Nova-side pickup: nova-mcp's facade proxy (M.4) snapshots sirius-mcp
+at boot and re-exposes every tool under its original namespace, so
+`sirius.chat` and `sirius.embed` appear on the facade with no
+nova-side code change.
+
 ## Testing
 
 - `bun:test`. Controller tests use manual mocks
