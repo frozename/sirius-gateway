@@ -179,6 +179,46 @@ bun run lint
 bun run format
 ```
 
+## Docker build
+
+`apps/sirius-api` ships a production-ready multi-stage Dockerfile at
+`apps/sirius-api/Dockerfile`. Build it from the PARENT directory that
+contains both `sirius-gateway/` and `nova/` — the gateway depends on
+`@nova/contracts` + `@nova/mcp-shared` via `file:../nova/packages/*`,
+so `bun install` inside the image needs nova on disk:
+
+```sh
+# From the parent dir that contains both sirius-gateway/ and nova/
+cd "$(dirname sirius-gateway)"
+docker build \
+  -f sirius-gateway/apps/sirius-api/Dockerfile \
+  -t llamactl/sirius-api:dev \
+  .
+```
+
+The image pins `oven/bun:1.3.13` for the builder and
+`oven/bun:1.3.13-slim` for the runtime, runs as the non-root `bun`
+user, listens on `${SIRIUS_PORT:-3000}` bound to `0.0.0.0`, and ships
+a `HEALTHCHECK` that hits `GET /health`.
+
+Intended for `llamactl composite apply` workflows: build locally,
+tag `llamactl/sirius-api:dev`, and Docker Desktop K8s pulls from the
+local daemon via `imagePullPolicy: IfNotPresent` — no registry push
+required for dev.
+
+Run standalone:
+
+```sh
+docker run --rm -p 3000:3000 \
+  -e SIRIUS_API_KEYS=sk-test-token \
+  -e OPENAI_API_KEY=sk-... \
+  llamactl/sirius-api:dev
+```
+
+BuildKit-only: a `Dockerfile.dockerignore` sits next to the Dockerfile
+and excludes `node_modules`, `dist`, `.git`, `.env*`, and unrelated
+sibling repos from the build context.
+
 ## Family + docs
 
 - Canonical contracts and shared helpers live in

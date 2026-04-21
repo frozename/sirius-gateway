@@ -1,0 +1,70 @@
+# BuildKit per-Dockerfile ignore — takes precedence over any
+# `.dockerignore` at the build-context root when this exact file
+# (`<Dockerfile>.dockerignore`) sits next to the Dockerfile.
+#
+# Build context is the PARENT dir that contains both
+# `sirius-gateway/` and `nova/`. Paths below are relative to that
+# root, so the leading segment matters.
+
+# --- sirius-gateway ---
+sirius-gateway/node_modules
+sirius-gateway/**/node_modules
+sirius-gateway/dist
+sirius-gateway/**/dist
+sirius-gateway/**/*.tsbuildinfo
+sirius-gateway/coverage
+sirius-gateway/**/coverage
+sirius-gateway/.git
+# Stale compiled artefacts scattered alongside TS sources (local-dev
+# by-product). Bun prefers .js over .ts when both exist in a workspace
+# package, which collapses Nest DI identities and breaks module
+# resolution. Strip them so the container always runs the TS sources.
+sirius-gateway/libs/**/src/**/*.js
+sirius-gateway/libs/**/src/**/*.d.ts
+sirius-gateway/libs/**/src/**/*.js.map
+sirius-gateway/libs/**/src/**/*.d.ts.map
+sirius-gateway/apps/**/src/**/*.js
+sirius-gateway/apps/**/src/**/*.d.ts
+sirius-gateway/apps/**/src/**/*.js.map
+sirius-gateway/apps/**/src/**/*.d.ts.map
+sirius-gateway/.env
+sirius-gateway/.env.*
+sirius-gateway/**/.env
+sirius-gateway/**/.env.*
+sirius-gateway/**/*.log
+sirius-gateway/test-results
+sirius-gateway/**/test-results
+sirius-gateway/.DS_Store
+sirius-gateway/**/.DS_Store
+sirius-gateway/.vscode
+sirius-gateway/.idea
+
+# --- nova (sibling workspace, only needed for file: deps) ---
+nova/node_modules
+nova/**/node_modules
+nova/dist
+nova/**/dist
+nova/**/*.tsbuildinfo
+nova/packages/**/src/**/*.js
+nova/packages/**/src/**/*.d.ts
+nova/packages/**/src/**/*.js.map
+nova/packages/**/src/**/*.d.ts.map
+nova/.git
+nova/.env
+nova/.env.*
+nova/**/.env
+nova/**/.env.*
+nova/**/*.log
+nova/.DS_Store
+nova/**/.DS_Store
+nova/.vscode
+nova/.idea
+
+# --- drop every other sibling in the personal/ dir ---
+# Prevents accidentally sucking in llamactl, embersynth, claude-mem, etc.
+# when someone runs `docker build` from the `personal/` parent.
+/llamactl
+/embersynth
+/claude-mem
+/electron-mcp-server
+/open-vibe-island

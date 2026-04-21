@@ -1,0 +1,30 @@
+# NOTE: Docker does NOT consult this file for the sirius-api build.
+#
+# The build context for `apps/sirius-api/Dockerfile` is the PARENT
+# directory that contains both `sirius-gateway/` and `nova/` (required
+# for the `file:../nova/packages/*` workspace deps). Docker looks for
+# `.dockerignore` at the build-context root, not next to the app.
+#
+# The active ignore file for this build is:
+#   apps/sirius-api/Dockerfile.dockerignore
+# (BuildKit's per-Dockerfile ignore, colocated with the Dockerfile).
+#
+# This file is kept for tooling that expects a conventional
+# `.dockerignore` next to an app's Dockerfile.
+
+node_modules
+**/node_modules
+dist
+**/dist
+*.tsbuildinfo
+coverage
+.git
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.log
+test-results
+.DS_Store
+.vscode
+.idea
