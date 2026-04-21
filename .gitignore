@@ -5,3 +5,17 @@ dist/
 *.tsbuildinfo
 coverage/
 .DS_Store
+
+# Prevent `tsc` / IDE emits from polluting source trees. Per-package
+# tsconfigs target dist/, but `tsc --build` with a misconfigured
+# rootDir (or a one-off run) occasionally drops .js/.d.ts beside
+# the .ts inputs — those stale artefacts shadow TS during Bun's
+# module resolution and collapse Nest DI identities at runtime.
+libs/**/src/**/*.js
+libs/**/src/**/*.d.ts
+libs/**/src/**/*.js.map
+libs/**/src/**/*.d.ts.map
+apps/**/src/**/*.js
+apps/**/src/**/*.d.ts
+apps/**/src/**/*.js.map
+apps/**/src/**/*.d.ts.map
