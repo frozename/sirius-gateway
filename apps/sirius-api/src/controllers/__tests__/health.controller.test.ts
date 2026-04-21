@@ -7,6 +7,7 @@ describe('HealthController', () => {
   let mockRegistry: any;
   let mockPolicy: any;
   let mockReloader: any;
+  let mockModelDiscovery: any;
 
   beforeEach(() => {
     mockGateway = {
@@ -22,8 +23,15 @@ describe('HealthController', () => {
     };
 
     mockReloader = { reload: mock() };
+    mockModelDiscovery = { backfillProviderByName: mock(async () => 0) };
 
-    controller = new HealthController(mockGateway, mockRegistry, mockPolicy, mockReloader);
+    controller = new HealthController(
+      mockGateway,
+      mockRegistry,
+      mockPolicy,
+      mockReloader,
+      mockModelDiscovery,
+    );
   });
 
   describe('health', () => {
@@ -137,6 +145,48 @@ describe('HealthController', () => {
       expect(res.kept).toEqual(['together']);
       expect(res.skipped).toEqual([]);
       expect(res.timestamp).toBeDefined();
+      // Both newly-added AND still-present ("kept") providers should
+      // have their models backfilled. Steady-state reloads return
+      // `added: []` because the yaml hasn't changed, but the
+      // upstream's model list may have — without covering `kept[]`
+      // discovery never re-runs after boot.
+      expect(mockModelDiscovery.backfillProviderByName).toHaveBeenCalledWith(
+        'openai',
+      );
+      expect(mockModelDiscovery.backfillProviderByName).toHaveBeenCalledWith(
+        'together',
+      );
+      // `removed` + `skipped` never get backfilled.
+      expect(
+        mockModelDiscovery.backfillProviderByName,
+      ).not.toHaveBeenCalledWith('anthropic');
+    });
+
+    it('backfills every kept provider on a steady-state reload (added: [])', async () => {
+      // Repro of the ConfigMap-mounted gap: identical yaml, so the
+      // reload returns `added: []` and `kept: [...]`. Routing must
+      // still pick up any upstream-side model changes without a pod
+      // restart.
+      mockReloader.reload.mockReturnValue({
+        path: '/etc/sirius/providers.yaml',
+        added: [],
+        removed: [],
+        kept: ['local-llm', 'together', 'openai-compat-node'],
+        skipped: [],
+      });
+      await controller.providersReload();
+      expect(mockModelDiscovery.backfillProviderByName).toHaveBeenCalledTimes(
+        3,
+      );
+      expect(mockModelDiscovery.backfillProviderByName).toHaveBeenCalledWith(
+        'local-llm',
+      );
+      expect(mockModelDiscovery.backfillProviderByName).toHaveBeenCalledWith(
+        'together',
+      );
+      expect(mockModelDiscovery.backfillProviderByName).toHaveBeenCalledWith(
+        'openai-compat-node',
+      );
     });
 
     it('surfaces skipped entries (malformed yaml rows) on the report', async () => {
@@ -151,6 +201,11 @@ describe('HealthController', () => {
       expect(res.skipped).toEqual([
         { name: 'broken', reason: 'has no baseUrl and no default' },
       ]);
+      // Skipped entries never registered, so they must not be
+      // backfilled.
+      expect(
+        mockModelDiscovery.backfillProviderByName,
+      ).not.toHaveBeenCalledWith('broken');
     });
   });
 });

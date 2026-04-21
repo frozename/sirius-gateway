@@ -70,6 +70,33 @@ describe('ModelRegistryService', () => {
     expect(resolved?.provider).toBe('ollama');
   });
 
+  it('round-trips a discovered qwen2.5-0.5b-instruct entry', () => {
+    // Regression test for the boot-time routing bug: models
+    // discovered via a provider's `listModels()` must be resolvable
+    // by routing, not just the ones baked into
+    // `DEFAULT_MODEL_CATALOG`.
+    registry.addModel({
+      modelId: 'qwen2.5-0.5b-instruct',
+      provider: 'local-llm',
+      aliases: ['qwen2.5-0.5b-instruct'],
+      capabilities: {
+        chat: true,
+        streaming: true,
+        tools: false,
+        embeddings: false,
+        vision: false,
+        jsonMode: false,
+      },
+      contextWindow: 8192,
+      maxOutputTokens: 4096,
+    });
+    const resolved = registry.resolveModel('qwen2.5-0.5b-instruct');
+    expect(resolved).toEqual({
+      modelId: 'qwen2.5-0.5b-instruct',
+      provider: 'local-llm',
+    });
+  });
+
   it('returns all providers for a model id', () => {
     // Add same model id for different providers
     registry.addModel({

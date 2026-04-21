@@ -7,6 +7,7 @@ import { FastifyAdapter } from '@nestjs/platform-fastify';
 import type { INestApplication } from '@nestjs/common';
 import { AppModule } from '../app.module';
 import { ProviderRegistry } from '@sirius/core';
+import { ModelRegistryService } from '@sirius/model-registry';
 
 /**
  * Integration smoke test for the llamactl↔sirius convergence:
@@ -23,17 +24,39 @@ import { ProviderRegistry } from '@sirius/core';
  *        `@sirius/provider-llamactl`)
  *      * plus the built-in openai/anthropic/ollama adapters that
  *        register themselves unconditionally.
+ *   5. Assert that the discover-and-register boot step upserted
+ *      models exposed via `listModels()` into the registry so
+ *      routing can resolve them.
  *
- * Doesn't hit any upstream (no real keys) — the goal is to validate
- * the boot wiring. Upstream behaviour is covered by the adapter
- * tests in each provider module.
+ * Spins a tiny Bun.serve stub for the openai-compatible upstream so
+ * the from-file provider's `listModels()` returns real data.
  */
 
+const UPSTREAM_PORT = 39215;
 let tmp = '';
 let app: INestApplication | null = null;
+let upstream: ReturnType<typeof Bun.serve> | null = null;
 const originalEnv = { ...process.env };
 
 beforeAll(async () => {
+  // Hermetic openai-compat upstream that mimics a llama-server
+  // serving a single aliased model.
+  upstream = Bun.serve({
+    port: UPSTREAM_PORT,
+    hostname: '127.0.0.1',
+    async fetch(req) {
+      const url = new URL(req.url);
+      if (url.pathname === '/v1/models' && req.method === 'GET') {
+        return Response.json({
+          data: [
+            { id: 'qwen2.5-0.5b-instruct', created: 100, owned_by: 'llamacpp' },
+          ],
+        });
+      }
+      return new Response('not found', { status: 404 });
+    },
+  });
+
   tmp = mkdtempSync(join(tmpdir(), 'sirius-llamactl-smoke-'));
 
   const providersPath = join(tmp, 'sirius-providers.yaml');
@@ -51,6 +74,9 @@ beforeAll(async () => {
       '    kind: anthropic',
       '    baseUrl: http://127.0.0.1:1/v1',
       '    apiKeyRef: $FAKE_ANTHROPIC_KEY',
+      '  - name: local-llm',
+      '    kind: openai-compatible',
+      `    baseUrl: http://127.0.0.1:${UPSTREAM_PORT}/v1`,
       '',
     ].join('\n'),
   );
@@ -77,6 +103,8 @@ beforeAll(async () => {
 afterAll(async () => {
   await app?.close();
   app = null;
+  upstream?.stop(true);
+  upstream = null;
   rmSync(tmp, { recursive: true, force: true });
   for (const key of Object.keys(process.env)) delete process.env[key];
   Object.assign(process.env, originalEnv);
@@ -92,10 +120,24 @@ describe('sirius + llamactl integration', () => {
     // fromfile adapters (from sirius-providers.yaml)
     expect(names.has('openai-fromfile')).toBe(true);
     expect(names.has('anthropic-fromfile')).toBe(true);
+    expect(names.has('local-llm')).toBe(true);
 
     // llamactl node adapters (from LLAMACTL_NODES)
     expect(names.has('llamactl-gpu1')).toBe(true);
     expect(names.has('llamactl-mac-mini')).toBe(true);
+  });
+
+  test('ModelRegistry resolves models discovered via listModels()', () => {
+    // Regression test for the /v1/chat/completions routing bug:
+    // models discovered through a provider's `listModels()` must
+    // populate the routing map so `resolveModel()` doesn't
+    // short-circuit with "does not exist".
+    const modelRegistry = app!.get(ModelRegistryService);
+    const resolved = modelRegistry.resolveModel('qwen2.5-0.5b-instruct');
+    expect(resolved).toEqual({
+      modelId: 'qwen2.5-0.5b-instruct',
+      provider: 'local-llm',
+    });
   });
 
   test('GET /v1/models reflects the registered adapters', async () => {
@@ -117,5 +159,7 @@ describe('sirius + llamactl integration', () => {
     // the gateway surface itself is alive — the auth gate passed
     // and the controller responded with a structured body.
     expect(body).toBeTruthy();
+    const ids = new Set((body.data ?? []).map((m) => m.id));
+    expect(ids.has('qwen2.5-0.5b-instruct')).toBe(true);
   });
 });

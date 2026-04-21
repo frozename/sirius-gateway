@@ -1,6 +1,9 @@
 import { Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { Public } from '@sirius/auth';
-import { ModelRegistryService } from '@sirius/model-registry';
+import {
+  ModelDiscoveryService,
+  ModelRegistryService,
+} from '@sirius/model-registry';
 import { PolicyService } from '@sirius/policy';
 import { FromFileReloadService } from '@sirius/provider-fromfile';
 import { GatewayService } from '../gateway.service';
@@ -14,6 +17,7 @@ export class HealthController {
     private readonly modelRegistry: ModelRegistryService,
     private readonly policyService: PolicyService,
     private readonly reloader: FromFileReloadService,
+    private readonly modelDiscovery: ModelDiscoveryService,
   ) {}
 
   @Get('health')
@@ -45,6 +49,21 @@ export class HealthController {
     // changed. Public-auth-exempt for the same reason /health is:
     // infra bits can't rely on an API token.
     const result = this.reloader.reload();
+
+    // Backfill discovered models for every provider that survived the
+    // reconciliation — both newly-added and still-present ("kept")
+    // entries. Real-world: a steady-state ConfigMap reload returns
+    // `added: []` because the provider list hasn't changed, but the
+    // upstream model catalog may have (operator swapped a
+    // llama-server's loaded model, an upstream came back online,
+    // etc.). Backfilling kept providers is cheap (addModel upserts)
+    // and removes the "reload never re-discovers" footgun. Skipped
+    // entries never registered; removed providers are gone.
+    const names = [...result.added, ...result.kept];
+    await Promise.all(
+      names.map((name) => this.modelDiscovery.backfillProviderByName(name)),
+    );
+
     return {
       ok: true,
       path: result.path,
