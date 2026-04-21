@@ -1,8 +1,15 @@
 import { Injectable, Module, type DynamicModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProviderRegistry, nova } from '@sirius/core';
-import type { AiProvider } from '@sirius/core';
+import type { AiProvider, ModelInfo, ProviderHealth } from '@sirius/core';
 import { loadProvidersFile, resolveApiKeyRef, resolveFilePath } from './loader.js';
+
+/**
+ * Anthropic's public API version. The `/v1/models` + `/v1/messages`
+ * endpoints require this as the `anthropic-version` header. Kept as a
+ * single const so the date is visible and updates touch one site.
+ */
+const ANTHROPIC_API_VERSION = '2023-06-01';
 
 /**
  * Reads llamactl's `sirius-providers.yaml` at boot and registers a
@@ -45,6 +52,171 @@ function novaProviderFor(entry: {
     baseUrl,
     apiKey,
   });
+}
+
+/**
+ * Anthropic's native `/v1/models` + `/v1/messages` endpoints require
+ * `x-api-key` + `anthropic-version` headers, NOT `Authorization:
+ * Bearer`. Their experimental OpenAI-compat `/v1/chat/completions`
+ * endpoint accepts Bearer, which is why Nova's openai-compat factory
+ * handles chat fine but blows up at boot on `/v1/models`.
+ *
+ * Rather than teach Nova's generic factory about provider-specific
+ * auth, we do the Anthropic-native `/models` + `/models/{id}` call
+ * directly here when the fromfile entry's `kind === 'anthropic'` and
+ * overlay the result on top of the Nova chat adapter. Chat continues
+ * to use the compat endpoint (which works with Bearer); only the
+ * model-listing + health-probe paths swap to native auth.
+ */
+interface AnthropicNativeShape {
+  baseUrl: string;
+  apiKey: string;
+  providerName: string;
+}
+
+async function listAnthropicNativeModels(
+  opts: AnthropicNativeShape,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): Promise<ModelInfo[]> {
+  const base = opts.baseUrl.endsWith('/')
+    ? opts.baseUrl.slice(0, -1)
+    : opts.baseUrl;
+  const res = await fetchImpl(`${base}/models`, {
+    method: 'GET',
+    headers: {
+      'x-api-key': opts.apiKey,
+      'anthropic-version': ANTHROPIC_API_VERSION,
+      'content-type': 'application/json',
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `${opts.providerName} /models ${res.status}: ${text.slice(0, 500)}`,
+    );
+  }
+  const raw = (await res.json()) as {
+    data?: Array<{
+      id?: string;
+      display_name?: string;
+      created_at?: string;
+      type?: string;
+    }>;
+  };
+  // Anthropic's `/v1/models` returns dated ids only (e.g.
+  // `claude-haiku-4-5-20251001`), but the runtime chat endpoint
+  // ALSO accepts the undated alias `claude-haiku-4-5`. Operators
+  // write the undated form in most docs + UIs, so we emit both the
+  // dated id and the undated alias so either routes correctly. The
+  // dated form is the canonical `id` we return — if a date suffix
+  // is absent, no alias is emitted.
+  const out: ModelInfo[] = [];
+  for (const m of raw.data ?? []) {
+    const id = String(m.id ?? '');
+    if (!id) continue;
+    const created = m.created_at
+      ? Math.floor(new Date(m.created_at).getTime() / 1000)
+      : undefined;
+    const info: ModelInfo = { id, provider: opts.providerName };
+    if (Number.isFinite(created)) info.created = created as number;
+    info.ownedBy = 'anthropic';
+    out.push(info);
+    const undated = stripAnthropicDateSuffix(id);
+    if (undated && undated !== id) {
+      out.push({ id: undated, provider: opts.providerName, ownedBy: 'anthropic' });
+    }
+  }
+  return out;
+}
+
+/**
+ * Strip a trailing `-YYYYMMDD` suffix from an Anthropic model id.
+ * `claude-haiku-4-5-20251001` → `claude-haiku-4-5`. If the id does
+ * not match the pattern, returns `null` (don't emit a bogus alias).
+ *
+ * This is the Anthropic-specific counterpart to Gemini's
+ * `models/<name>` canonicalisation — both upstreams expose a
+ * canonical "dated" form in `/v1/models` that differs from the
+ * undated alias operators actually type.
+ */
+function stripAnthropicDateSuffix(id: string): string | null {
+  const match = id.match(/^(.+)-(\d{8})$/);
+  if (!match) return null;
+  return match[1]!;
+}
+
+async function probeAnthropicHealth(
+  opts: AnthropicNativeShape,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): Promise<ProviderHealth> {
+  const base = opts.baseUrl.endsWith('/')
+    ? opts.baseUrl.slice(0, -1)
+    : opts.baseUrl;
+  const startedAt = Date.now();
+  try {
+    const res = await fetchImpl(`${base}/models?limit=1`, {
+      method: 'GET',
+      headers: {
+        'x-api-key': opts.apiKey,
+        'anthropic-version': ANTHROPIC_API_VERSION,
+        'content-type': 'application/json',
+      },
+    });
+    const latencyMs = Date.now() - startedAt;
+    if (!res.ok) {
+      return {
+        provider: opts.providerName,
+        status: res.status >= 500 ? 'down' : 'degraded',
+        lastChecked: new Date(),
+        latencyMs,
+        error: `HTTP ${res.status}`,
+      };
+    }
+    return {
+      provider: opts.providerName,
+      status: 'healthy',
+      lastChecked: new Date(),
+      latencyMs,
+    };
+  } catch (err) {
+    return {
+      provider: opts.providerName,
+      status: 'down',
+      lastChecked: new Date(),
+      error: (err as Error).message,
+    };
+  }
+}
+
+/**
+ * Wrap the sirius-legacy AiProvider produced by `toSiriusAdapter` so
+ * its `listModels()` + `healthCheck()` hit Anthropic's native API
+ * with `x-api-key` instead of going through Nova's Bearer-auth
+ * openai-compat wrapper. Chat paths are untouched — those already
+ * work against Anthropic's OpenAI-compat endpoint.
+ *
+ * Exported for the unit test to reach directly.
+ */
+export function overlayAnthropicNativeAuth(
+  adapter: AiProvider,
+  entry: { name: string; baseUrl?: string; apiKeyRef?: string },
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): AiProvider {
+  const baseUrl =
+    entry.baseUrl ??
+    DEFAULT_BASE_URLS.anthropic ??
+    'https://api.anthropic.com/v1';
+  const apiKey = resolveApiKeyRef(entry.apiKeyRef);
+  const nativeOpts: AnthropicNativeShape = {
+    baseUrl,
+    apiKey,
+    providerName: entry.name,
+  };
+  return {
+    ...adapter,
+    listModels: () => listAnthropicNativeModels(nativeOpts, fetchImpl),
+    healthCheck: () => probeAnthropicHealth(nativeOpts, fetchImpl),
+  };
 }
 
 /**
@@ -217,7 +389,10 @@ export function reconcileFromFileProviders(
   for (const entry of entries) {
     try {
       const core = novaProviderFor(entry);
-      const adapter = toSiriusAdapter(entry.name, core);
+      let adapter = toSiriusAdapter(entry.name, core);
+      if (entry.kind === 'anthropic') {
+        adapter = overlayAnthropicNativeAuth(adapter, entry);
+      }
       const wasPresent = registry.get(entry.name) !== undefined;
       registry.register(adapter);
       ownedAfter.push(entry.name);
@@ -307,7 +482,10 @@ export class FromFileProviderModule {
             for (const entry of entries) {
               try {
                 const core = novaProviderFor(entry);
-                const adapter = toSiriusAdapter(entry.name, core);
+                let adapter = toSiriusAdapter(entry.name, core);
+                if (entry.kind === 'anthropic') {
+                  adapter = overlayAnthropicNativeAuth(adapter, entry);
+                }
                 registry.register(adapter);
                 adapters.push(adapter);
                 owned.push(entry.name);

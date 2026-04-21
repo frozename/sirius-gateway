@@ -172,12 +172,18 @@ export function toCapabilityMatrix(
   info: ModelInfo,
   providerName: string,
 ): ModelCapabilityMatrix {
-  const id = info.id;
-  const embeddings = looksLikeEmbeddingModel(id);
+  const rawId = info.id;
+  const { canonical, original, hadPrefix } = normalizeModelId(rawId);
+  const embeddings = looksLikeEmbeddingModel(canonical);
+  // When the upstream returns a `<prefix>/<name>` shape (Gemini's
+  // `models/gemini-2.5-flash` is the canonical example), register the
+  // unprefixed form as the canonical id and keep the prefixed form
+  // in aliases so operators who hardcoded the raw id don't break.
+  const aliases = hadPrefix ? [canonical, original] : [canonical];
   return {
-    modelId: id,
+    modelId: canonical,
     provider: providerName,
-    aliases: [id],
+    aliases,
     capabilities: {
       chat: !embeddings,
       streaming: !embeddings,
@@ -193,6 +199,42 @@ export function toCapabilityMatrix(
     contextWindow: 8_192,
     maxOutputTokens: embeddings ? 0 : 4_096,
   };
+}
+
+/**
+ * Strip a single leading `<prefix>/` segment from an upstream model
+ * id. Gemini's OpenAI-compat `/v1beta/openai/models` surface returns
+ * ids like `models/gemini-2.5-flash`; operators naturally type
+ * `gemini-2.5-flash`. Deliberately conservative — only the first
+ * segment is stripped, so ids that legitimately contain a path
+ * (`organizations/foo/models/bar`) pass through untouched.
+ *
+ * Exported so tests can round-trip the three cases the discovery
+ * layer cares about: no slash, one leading slash, and multi-segment.
+ */
+export function normalizeModelId(rawId: string): {
+  canonical: string;
+  original: string;
+  hadPrefix: boolean;
+} {
+  const original = rawId;
+  const first = rawId.indexOf('/');
+  // No slash → pass through verbatim.
+  if (first < 0) {
+    return { canonical: rawId, original, hadPrefix: false };
+  }
+  // More than one slash → treat as a path that might be meaningful
+  // to the upstream; do not touch.
+  if (rawId.indexOf('/', first + 1) >= 0) {
+    return { canonical: rawId, original, hadPrefix: false };
+  }
+  const tail = rawId.slice(first + 1);
+  // Defensive: empty tail (trailing slash) or empty prefix mean the
+  // id is malformed — leave it alone rather than silently drop data.
+  if (tail.length === 0 || first === 0) {
+    return { canonical: rawId, original, hadPrefix: false };
+  }
+  return { canonical: tail, original, hadPrefix: true };
 }
 
 function looksLikeEmbeddingModel(id: string): boolean {

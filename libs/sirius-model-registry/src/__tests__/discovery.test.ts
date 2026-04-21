@@ -3,6 +3,7 @@ import { ProviderRegistry, type AiProvider } from '@sirius/core';
 import { ModelRegistryService } from '../model-registry.service';
 import {
   ModelDiscoveryService,
+  normalizeModelId,
   toCapabilityMatrix,
 } from '../model-discovery.service';
 
@@ -127,6 +128,80 @@ describe('ModelDiscoveryService', () => {
       'local-llm',
     );
     expect(matrix.aliases).toContain('phi-3-mini');
+  });
+
+  describe('prefix normalisation (e.g. Gemini `models/<name>`)', () => {
+    it('strips a single leading `models/` segment on registry entry', async () => {
+      // Gemini's OpenAI-compat /models returns `models/gemini-2.5-flash`.
+      // Operators naturally write `gemini-2.5-flash` in chat requests.
+      providerRegistry.register(
+        fakeProvider('gemini', ['models/gemini-2.5-flash']),
+      );
+      await discovery.backfillAll();
+
+      // Canonical id + unprefixed form both resolve to the same entry.
+      const byUnprefixed = modelRegistry.resolveModel('gemini-2.5-flash');
+      expect(byUnprefixed).toEqual({
+        modelId: 'gemini-2.5-flash',
+        provider: 'gemini',
+      });
+
+      // Prefixed form still resolves (operators who hardcoded it don't
+      // break).
+      const byPrefixed = modelRegistry.resolveModel('models/gemini-2.5-flash');
+      expect(byPrefixed).toEqual({
+        modelId: 'gemini-2.5-flash',
+        provider: 'gemini',
+      });
+    });
+
+    it('leaves ids without a slash unchanged', () => {
+      const matrix = toCapabilityMatrix(
+        { id: 'claude-haiku-4-5', provider: 'anthropic' },
+        'anthropic',
+      );
+      expect(matrix.modelId).toBe('claude-haiku-4-5');
+      expect(matrix.aliases).toEqual(['claude-haiku-4-5']);
+    });
+
+    it('leaves multi-slash ids alone (conservative: no over-normalisation)', () => {
+      const matrix = toCapabilityMatrix(
+        { id: 'organizations/foo/models/bar', provider: 'weird' },
+        'weird',
+      );
+      expect(matrix.modelId).toBe('organizations/foo/models/bar');
+      expect(matrix.aliases).toEqual(['organizations/foo/models/bar']);
+    });
+
+    it('normalizeModelId returns the expected shape for each case', () => {
+      expect(normalizeModelId('models/gemini-2.5-flash')).toEqual({
+        canonical: 'gemini-2.5-flash',
+        original: 'models/gemini-2.5-flash',
+        hadPrefix: true,
+      });
+      expect(normalizeModelId('gemini-2.5-flash')).toEqual({
+        canonical: 'gemini-2.5-flash',
+        original: 'gemini-2.5-flash',
+        hadPrefix: false,
+      });
+      expect(normalizeModelId('organizations/foo/models/bar')).toEqual({
+        canonical: 'organizations/foo/models/bar',
+        original: 'organizations/foo/models/bar',
+        hadPrefix: false,
+      });
+      // Malformed edge cases pass through verbatim rather than
+      // silently emitting '' or a surprising canonical.
+      expect(normalizeModelId('trailing/')).toEqual({
+        canonical: 'trailing/',
+        original: 'trailing/',
+        hadPrefix: false,
+      });
+      expect(normalizeModelId('/leading-slash')).toEqual({
+        canonical: '/leading-slash',
+        original: '/leading-slash',
+        hadPrefix: false,
+      });
+    });
   });
 
   it('swallows listModels() errors and keeps going with other providers', async () => {
