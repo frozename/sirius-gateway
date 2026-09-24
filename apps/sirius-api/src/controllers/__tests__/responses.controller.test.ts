@@ -74,7 +74,9 @@ describe('ResponsesController', () => {
       await controller.responses(body as any, mockReq, mockRes);
 
       expect(mockCompat.parseResponsesRequest).toHaveBeenCalledWith(body, 'req-123');
-      expect(mockGateway.createResponse).toHaveBeenCalledWith(parsedReq);
+      expect(mockGateway.createResponse).toHaveBeenCalledWith(parsedReq, {
+        signal: expect.any(AbortSignal),
+      });
       expect(mockCompat.formatResponsesResponse).toHaveBeenCalledWith(gatewayRes);
       expect(mockRes.header).toHaveBeenCalledWith('X-Request-Id', 'req-123');
       expect(mockRes.send).toHaveBeenCalledWith(formattedRes);
@@ -220,8 +222,9 @@ describe('ResponsesController', () => {
       
       const secondChunkCall = calls.find((call: unknown[]) => String(call[0]).includes('"delta":"2"'));
       expect(secondChunkCall).toBeUndefined();
-      
-      expect(mockResRaw.end).toHaveBeenCalled();
+
+      // The client is gone — no end() on a dead socket.
+      expect(mockResRaw.end).not.toHaveBeenCalled();
     });
   });
 });

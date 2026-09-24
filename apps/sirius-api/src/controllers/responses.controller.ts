@@ -22,6 +22,11 @@ export class ResponsesController {
     @Res() res: FastifyReply,
   ) {
     const requestId = (req.id as string) ?? randomUUID();
+    // A client that drops the connection before the response
+    // completes aborts the upstream call instead of leaving it
+    // running.
+    const abort = new AbortController();
+    res.raw.on('close', () => abort.abort());
 
     try {
       const request = this.compat.parseResponsesRequest(body, requestId);
@@ -37,7 +42,9 @@ export class ResponsesController {
         // For the Responses API streaming, we accumulate and emit structured events
         // For now, we'll emit OpenAI-compatible SSE chunks that can be adapted
         const responseId = `resp_${randomUUID()}`;
-        const stream = this.gateway.streamResponse(request);
+        const stream = this.gateway.streamResponse(request, {
+          signal: abort.signal,
+        });
 
         let aborted = false;
         res.raw.on('close', () => {
@@ -58,9 +65,13 @@ export class ResponsesController {
           }
         }
 
-        res.raw.end();
+        if (!aborted) {
+          res.raw.end();
+        }
       } else {
-        const response = await this.gateway.createResponse(request);
+        const response = await this.gateway.createResponse(request, {
+          signal: abort.signal,
+        });
         const formatted = this.compat.formatResponsesResponse(response);
         this.usageRecorder.record({
           provider: response._gatewayMeta.provider,
@@ -72,11 +83,15 @@ export class ResponsesController {
           latencyMs: response.latencyMs,
           requestId,
           route: response._gatewayMeta.strategy,
+          observation: response.metadata?.usageObservation,
         });
         res.header('X-Request-Id', requestId);
         return res.send(formatted);
       }
     } catch (error) {
+      if (res.raw.destroyed) {
+        return res;
+      }
       if (error instanceof HttpException) {
         res.status(error.getStatus()).header('X-Request-Id', requestId);
         return res.send(error.getResponse());

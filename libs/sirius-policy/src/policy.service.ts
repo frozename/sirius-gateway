@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
+import type { ProviderExecutionContext } from '@nova/contracts';
 
 interface CircuitState {
   failures: number;
@@ -38,24 +40,51 @@ export class PolicyService {
 
   async executeWithPolicy<T>(
     providerName: string,
-    operation: () => Promise<T>,
+    operation: (context: ProviderExecutionContext) => Promise<T>,
+    callerSignal?: AbortSignal,
   ): Promise<T> {
     this.checkCircuitBreaker(providerName);
 
+    if (callerSignal?.aborted) {
+      throw callerSignal.reason instanceof Error
+        ? callerSignal.reason
+        : new Error('Operation aborted');
+    }
+
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      // Each attempt owns an AbortController merged with the caller's
+      // signal. The timeout (or any failure) aborts the in-flight
+      // upstream request before a retry can start — previously the
+      // attempt was abandoned and the retry ran alongside it.
+      const attemptController = new AbortController();
+      const signal = callerSignal
+        ? AbortSignal.any([attemptController.signal, callerSignal])
+        : attemptController.signal;
       try {
-        const result = await this.withTimeout(operation());
+        const result = await this.withTimeout(
+          operation({ signal, attemptId: randomUUID() }),
+          attemptController,
+        );
         this.recordSuccess(providerName);
         return result;
       } catch (error) {
+        attemptController.abort();
         lastError = error instanceof Error ? error : new Error(String(error));
+
+        // A caller abort is not a provider failure — the client is
+        // gone, so don't retry and don't feed the circuit breaker.
+        if (callerSignal?.aborted) {
+          throw lastError;
+        }
         this.recordFailure(providerName);
 
         if (attempt < this.maxRetries) {
           const delay = this.baseDelay * Math.pow(2, attempt);
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
+      } finally {
+        attemptController.abort();
       }
     }
     throw lastError;
@@ -63,27 +92,50 @@ export class PolicyService {
 
   async *executeStreamWithPolicy<T>(
     providerName: string,
-    operation: () => AsyncIterable<T>,
+    operation: (signal: AbortSignal) => AsyncIterable<T>,
+    callerSignal?: AbortSignal,
   ): AsyncIterable<T> {
     this.checkCircuitBreaker(providerName);
 
+    if (callerSignal?.aborted) {
+      throw callerSignal.reason instanceof Error
+        ? callerSignal.reason
+        : new Error('Operation aborted');
+    }
+
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      // Same per-attempt contract as executeWithPolicy: the caller's
+      // signal is merged into each attempt's controller so an abort
+      // rejects a pending next() instead of queueing behind it.
+      const attemptController = new AbortController();
+      const signal = callerSignal
+        ? AbortSignal.any([attemptController.signal, callerSignal])
+        : attemptController.signal;
       try {
-        const stream = operation();
+        const stream = operation(signal);
         for await (const event of stream) {
           yield event;
         }
         this.recordSuccess(providerName);
         return;
       } catch (error) {
+        attemptController.abort();
         lastError = error instanceof Error ? error : new Error(String(error));
+
+        // A caller abort is not a provider failure — the client is
+        // gone, so don't retry and don't feed the circuit breaker.
+        if (callerSignal?.aborted) {
+          throw lastError;
+        }
         this.recordFailure(providerName);
 
         if (attempt < this.maxRetries) {
           const delay = this.baseDelay * Math.pow(2, attempt);
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
+      } finally {
+        attemptController.abort();
       }
     }
     throw lastError;
@@ -141,15 +193,15 @@ export class PolicyService {
     }
   }
 
-  private withTimeout<T>(promise: Promise<T>): Promise<T> {
-    return Promise.race([
-      promise,
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Operation timed out after ${this.timeoutMs}ms`)),
-          this.timeoutMs,
-        ),
-      ),
-    ]);
+  private withTimeout<T>(promise: Promise<T>, attempt: AbortController): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const err = new Error(`Operation timed out after ${this.timeoutMs}ms`);
+        attempt.abort(err);
+        reject(err);
+      }, this.timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 }
