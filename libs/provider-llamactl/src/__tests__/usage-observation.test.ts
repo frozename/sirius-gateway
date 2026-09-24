@@ -20,7 +20,6 @@ import type { UnifiedAiRequest, UnifiedEmbeddingRequest } from '@sirius/core';
 
 let server: ReturnType<typeof Bun.serve>;
 let port = 0;
-const barrier: Array<{ respond: () => Response; resolve: (r: Response) => void }> = [];
 
 function chatResponseBody(
   raw: { model: string; usage?: unknown; id?: string },
@@ -61,33 +60,17 @@ beforeAll(() => {
             chatResponseBody({ model: body.model, usage: { prompt_tokens: 3 } }),
           );
         }
-        if (mode === 'echo' || mode === 'echo-barrier') {
+        if (mode === 'echo') {
           // Usage reflects THIS request so concurrent callers can be
           // told apart: prompt_tokens = message length, id tags it.
           const len = body.messages?.[0]?.content?.length ?? 0;
-          const respond = () =>
-            Response.json(
-              chatResponseBody({
-                model: body.model,
-                id: `cmpl-${len}`,
-                usage: { prompt_tokens: len, completion_tokens: 1, total_tokens: len + 1 },
-              }),
-            );
-          if (mode === 'echo') return respond();
-          // Barrier: hold each request until two are in flight, then
-          // release them in reverse arrival order inside one tick.
-          // Both observation callbacks then land before either
-          // adapter-level read — a shared-slot observations carrier
-          // misattributes counts instead of passing by luck.
-          return new Promise<Response>((resolve) => {
-            barrier.push({ respond, resolve });
-            if (barrier.length === 2) {
-              const batch = barrier.splice(0);
-              for (let i = batch.length - 1; i >= 0; i--) {
-                batch[i]!.resolve(batch[i]!.respond());
-              }
-            }
-          });
+          return Response.json(
+            chatResponseBody({
+              model: body.model,
+              id: `cmpl-${len}`,
+              usage: { prompt_tokens: len, completion_tokens: 1, total_tokens: len + 1 },
+            }),
+          );
         }
         return Response.json(
           chatResponseBody({
@@ -174,7 +157,31 @@ describe('LlamactlAdapter usage observations (A2)', () => {
   });
 
   test('concurrent calls keep provenance isolated', async () => {
-    const a = makeAdapter('echo-barrier');
+    const a = makeAdapter('echo');
+    // Bun drains each socket's continuation chain atomically, so
+    // fixture-side timing alone cannot interleave one call's
+    // observation write with another call's adapter-side read. The
+    // gate suspends att-long between nova's resolve — where the
+    // observation is already written — and the adapter's map read,
+    // which is exactly the window a shared-slot carrier
+    // misattributes. The cross is deterministic, not racy.
+    const inner = (a as unknown as { nova: nova.AiProvider }).nova;
+    const orig = inner.createResponse.bind(inner);
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    inner.createResponse = (req, ctx) => {
+      const p = orig(req, ctx);
+      if (ctx?.attemptId === 'att-long') {
+        return p.then(async (res) => {
+          await gate;
+          return res;
+        });
+      }
+      return p;
+    };
+
     const long: UnifiedAiRequest = {
       ...chatReq,
       messages: [{ role: 'user', content: 'x'.repeat(40) }],
@@ -183,10 +190,11 @@ describe('LlamactlAdapter usage observations (A2)', () => {
       ...chatReq,
       messages: [{ role: 'user', content: 'yy' }],
     };
-    const [resLong, resShort] = await Promise.all([
-      a.createResponse(long, { attemptId: 'att-long' }),
-      a.createResponse(short, { attemptId: 'att-short' }),
-    ]);
+    const pLong = a.createResponse(long, { attemptId: 'att-long' });
+    const resShort = await a.createResponse(short, { attemptId: 'att-short' });
+    releaseGate();
+    const resLong = await pLong;
+
     const obsLong = obsOf(resLong);
     const obsShort = obsOf(resShort);
     expect(obsLong?.input_tokens).toBe(40);

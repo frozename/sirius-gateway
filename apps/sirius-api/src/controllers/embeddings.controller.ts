@@ -22,10 +22,17 @@ export class EmbeddingsController {
     @Res() res: FastifyReply,
   ) {
     const requestId = (req.id as string) ?? randomUUID();
+    // A client that drops the connection before the response
+    // completes aborts the upstream call instead of leaving it
+    // running.
+    const abort = new AbortController();
+    res.raw.on('close', () => abort.abort());
 
     try {
       const request = this.compat.parseEmbeddingRequest(body, requestId);
-      const response = await this.gateway.createEmbeddings(request);
+      const response = await this.gateway.createEmbeddings(request, {
+        signal: abort.signal,
+      });
       const formatted = this.compat.formatEmbeddingResponse(response);
       this.usageRecorder.record({
         provider: response.provider,
@@ -41,6 +48,9 @@ export class EmbeddingsController {
       res.header('X-Request-Id', requestId);
       return res.send(formatted);
     } catch (error) {
+      if (res.raw.destroyed) {
+        return res;
+      }
       if (error instanceof HttpException) {
         res.status(error.getStatus()).header('X-Request-Id', requestId);
         return res.send(error.getResponse());

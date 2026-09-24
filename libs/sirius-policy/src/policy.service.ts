@@ -92,27 +92,50 @@ export class PolicyService {
 
   async *executeStreamWithPolicy<T>(
     providerName: string,
-    operation: () => AsyncIterable<T>,
+    operation: (signal: AbortSignal) => AsyncIterable<T>,
+    callerSignal?: AbortSignal,
   ): AsyncIterable<T> {
     this.checkCircuitBreaker(providerName);
 
+    if (callerSignal?.aborted) {
+      throw callerSignal.reason instanceof Error
+        ? callerSignal.reason
+        : new Error('Operation aborted');
+    }
+
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      // Same per-attempt contract as executeWithPolicy: the caller's
+      // signal is merged into each attempt's controller so an abort
+      // rejects a pending next() instead of queueing behind it.
+      const attemptController = new AbortController();
+      const signal = callerSignal
+        ? AbortSignal.any([attemptController.signal, callerSignal])
+        : attemptController.signal;
       try {
-        const stream = operation();
+        const stream = operation(signal);
         for await (const event of stream) {
           yield event;
         }
         this.recordSuccess(providerName);
         return;
       } catch (error) {
+        attemptController.abort();
         lastError = error instanceof Error ? error : new Error(String(error));
+
+        // A caller abort is not a provider failure — the client is
+        // gone, so don't retry and don't feed the circuit breaker.
+        if (callerSignal?.aborted) {
+          throw lastError;
+        }
         this.recordFailure(providerName);
 
         if (attempt < this.maxRetries) {
           const delay = this.baseDelay * Math.pow(2, attempt);
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
+      } finally {
+        attemptController.abort();
       }
     }
     throw lastError;

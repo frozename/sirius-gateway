@@ -63,7 +63,7 @@ export class LlamactlAdapter implements AiProvider {
   async createResponse(
     request: SiriusReq,
     context?: nova.ProviderExecutionContext,
-  ): Promise<SiriusRes> {
+  ): Promise<SiriusRes & UsageObservationCarrier> {
     const novaReq = siriusRequestToNova(request);
     const attemptId = context?.attemptId ?? randomUUID();
     try {
@@ -81,9 +81,12 @@ export class LlamactlAdapter implements AiProvider {
     }
   }
 
-  async *streamResponse(request: SiriusReq): AsyncIterable<SiriusStreamEvent> {
+  async *streamResponse(
+    request: SiriusReq,
+    signal?: AbortSignal,
+  ): AsyncIterable<SiriusStreamEvent> {
     const novaReq = siriusRequestToNova(request);
-    const stream = this.nova.streamResponse?.(novaReq);
+    const stream = this.nova.streamResponse?.(novaReq, signal);
     if (!stream) {
       yield {
         type: 'error',

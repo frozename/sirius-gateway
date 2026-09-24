@@ -22,6 +22,11 @@ export class ChatCompletionsController {
     @Res() res: FastifyReply,
   ) {
     const requestId = (req.id as string) ?? randomUUID();
+    // A client that drops the connection before the response
+    // completes aborts the upstream call instead of leaving it
+    // running.
+    const abort = new AbortController();
+    res.raw.on('close', () => abort.abort());
 
     try {
       const request = this.compat.parseChatCompletionRequest(body, requestId);
@@ -35,7 +40,9 @@ export class ChatCompletionsController {
         });
 
         const responseId = `chatcmpl-${randomUUID()}`;
-        const stream = this.gateway.streamResponse(request);
+        const stream = this.gateway.streamResponse(request, {
+          signal: abort.signal,
+        });
 
         let firstChunkEmitted = false;
         let aborted = false;
@@ -80,10 +87,14 @@ export class ChatCompletionsController {
           }
         }
 
-        res.raw.write(this.compat.formatSSEDone());
-        res.raw.end();
+        if (!aborted) {
+          res.raw.write(this.compat.formatSSEDone());
+          res.raw.end();
+        }
       } else {
-        const response = await this.gateway.createResponse(request);
+        const response = await this.gateway.createResponse(request, {
+          signal: abort.signal,
+        });
         const formatted = this.compat.formatChatCompletionResponse(response);
         this.usageRecorder.record({
           provider: response._gatewayMeta.provider,
@@ -101,6 +112,9 @@ export class ChatCompletionsController {
         return res.send(formatted);
       }
     } catch (error) {
+      if (res.raw.destroyed) {
+        return res;
+      }
       if (error instanceof HttpException) {
         res.status(error.getStatus()).header('X-Request-Id', requestId);
         return res.send(error.getResponse());

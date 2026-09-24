@@ -30,8 +30,17 @@ export interface AiProvider {
   createResponse(
     request: UnifiedAiRequest,
     context?: ProviderExecutionContext,
-  ): Promise<UnifiedAiResponse>;
-  streamResponse(request: UnifiedAiRequest): AsyncIterable<UnifiedStreamEvent>;
+  ): Promise<UnifiedAiResponse & UsageObservationCarrier>;
+  /**
+   * `signal` mirrors nova's `streamResponse(request, signal)`: it must
+   * reach the upstream fetch so a pending `next()` rejects and the
+   * connection is cancelled — `iterator.return()` alone queues behind
+   * a hung stream and never tears it down.
+   */
+  streamResponse(
+    request: UnifiedAiRequest,
+    signal?: AbortSignal,
+  ): AsyncIterable<UnifiedStreamEvent>;
   createEmbeddings(
     request: UnifiedEmbeddingRequest,
     context?: ProviderExecutionContext,
