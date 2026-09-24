@@ -20,6 +20,7 @@ import type { UnifiedAiRequest, UnifiedEmbeddingRequest } from '@sirius/core';
 
 let server: ReturnType<typeof Bun.serve>;
 let port = 0;
+const barrier: Array<{ respond: () => Response; resolve: (r: Response) => void }> = [];
 
 function chatResponseBody(
   raw: { model: string; usage?: unknown; id?: string },
@@ -60,17 +61,33 @@ beforeAll(() => {
             chatResponseBody({ model: body.model, usage: { prompt_tokens: 3 } }),
           );
         }
-        if (mode === 'echo') {
+        if (mode === 'echo' || mode === 'echo-barrier') {
           // Usage reflects THIS request so concurrent callers can be
           // told apart: prompt_tokens = message length, id tags it.
           const len = body.messages?.[0]?.content?.length ?? 0;
-          return Response.json(
-            chatResponseBody({
-              model: body.model,
-              id: `cmpl-${len}`,
-              usage: { prompt_tokens: len, completion_tokens: 1, total_tokens: len + 1 },
-            }),
-          );
+          const respond = () =>
+            Response.json(
+              chatResponseBody({
+                model: body.model,
+                id: `cmpl-${len}`,
+                usage: { prompt_tokens: len, completion_tokens: 1, total_tokens: len + 1 },
+              }),
+            );
+          if (mode === 'echo') return respond();
+          // Barrier: hold each request until two are in flight, then
+          // release them in reverse arrival order inside one tick.
+          // Both observation callbacks then land before either
+          // adapter-level read — a shared-slot observations carrier
+          // misattributes counts instead of passing by luck.
+          return new Promise<Response>((resolve) => {
+            barrier.push({ respond, resolve });
+            if (barrier.length === 2) {
+              const batch = barrier.splice(0);
+              for (let i = batch.length - 1; i >= 0; i--) {
+                batch[i]!.resolve(batch[i]!.respond());
+              }
+            }
+          });
         }
         return Response.json(
           chatResponseBody({
@@ -157,7 +174,7 @@ describe('LlamactlAdapter usage observations (A2)', () => {
   });
 
   test('concurrent calls keep provenance isolated', async () => {
-    const a = makeAdapter('echo');
+    const a = makeAdapter('echo-barrier');
     const long: UnifiedAiRequest = {
       ...chatReq,
       messages: [{ role: 'user', content: 'x'.repeat(40) }],

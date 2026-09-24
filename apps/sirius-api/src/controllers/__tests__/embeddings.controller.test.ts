@@ -31,6 +31,7 @@ describe('EmbeddingsController', () => {
       header: mock().mockReturnThis(),
       status: mock().mockReturnThis(),
       send: mock().mockReturnThis(),
+      raw: { on: mock(), write: mock(), end: mock(), writeHead: mock() },
     };
   });
 
@@ -54,7 +55,9 @@ describe('EmbeddingsController', () => {
       await controller.createEmbeddings(body as any, mockReq, mockRes);
 
       expect(mockCompat.parseEmbeddingRequest).toHaveBeenCalledWith(body, 'req-123');
-      expect(mockGateway.createEmbeddings).toHaveBeenCalledWith(parsedReq);
+      expect(mockGateway.createEmbeddings).toHaveBeenCalledWith(parsedReq, {
+        signal: expect.any(AbortSignal),
+      });
       expect(mockCompat.formatEmbeddingResponse).toHaveBeenCalledWith(gatewayRes);
       expect(mockRes.header).toHaveBeenCalledWith('X-Request-Id', 'req-123');
       expect(mockRes.send).toHaveBeenCalledWith(formattedRes);

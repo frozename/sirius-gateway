@@ -78,7 +78,9 @@ describe('ChatCompletionsController', () => {
       await controller.chatCompletions(body as any, mockReq, mockRes);
 
       expect(mockCompat.parseChatCompletionRequest).toHaveBeenCalledWith(body, 'req-123');
-      expect(mockGateway.createResponse).toHaveBeenCalledWith(parsedReq);
+      expect(mockGateway.createResponse).toHaveBeenCalledWith(parsedReq, {
+        signal: expect.any(AbortSignal),
+      });
       expect(mockCompat.formatChatCompletionResponse).toHaveBeenCalledWith(gatewayRes);
       expect(mockRes.header).toHaveBeenCalledWith('X-Request-Id', 'req-123');
       expect(mockRes.send).toHaveBeenCalledWith(formattedRes);
@@ -246,9 +248,10 @@ describe('ChatCompletionsController', () => {
       const calls = mockResRaw.write.mock.calls;
       const secondChunkCall = calls.find((call: unknown[]) => String(call[0]).includes('chunk":"2"'));
       expect(secondChunkCall).toBeUndefined();
-      
-      expect(mockResRaw.write).toHaveBeenCalledWith('data: [DONE]\n\n');
-      expect(mockResRaw.end).toHaveBeenCalled();
+
+      // The client is gone — no trailing DONE write, no end().
+      expect(mockResRaw.write).not.toHaveBeenCalledWith('data: [DONE]\n\n');
+      expect(mockResRaw.end).not.toHaveBeenCalled();
     });
 
     it('handles immediate throw in gateway.streamResponse', async () => {
