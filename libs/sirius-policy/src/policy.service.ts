@@ -57,19 +57,19 @@ export class PolicyService {
       // signal. The timeout (or any failure) aborts the in-flight
       // upstream request before a retry can start — previously the
       // attempt was abandoned and the retry ran alongside it.
-      const attempt = new AbortController();
+      const attemptController = new AbortController();
       const signal = callerSignal
-        ? AbortSignal.any([attempt.signal, callerSignal])
-        : attempt.signal;
+        ? AbortSignal.any([attemptController.signal, callerSignal])
+        : attemptController.signal;
       try {
         const result = await this.withTimeout(
           operation({ signal, attemptId: randomUUID() }),
-          attempt,
+          attemptController,
         );
         this.recordSuccess(providerName);
         return result;
       } catch (error) {
-        attempt.abort();
+        attemptController.abort();
         lastError = error instanceof Error ? error : new Error(String(error));
 
         // A caller abort is not a provider failure — the client is
@@ -84,7 +84,7 @@ export class PolicyService {
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       } finally {
-        attempt.abort();
+        attemptController.abort();
       }
     }
     throw lastError;
