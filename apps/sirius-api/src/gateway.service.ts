@@ -11,11 +11,23 @@ import type {
   RoutingDecision,
   ModelInfo,
   ProviderHealth,
+  UsageObservationCarrier,
 } from '@sirius/core';
 import { ProviderRegistry } from '@sirius/core';
 import { RoutingService } from '@sirius/routing';
 import { PolicyService } from '@sirius/policy';
 import { StreamingObserver, LatencyTracker } from '@sirius/observability';
+
+/**
+ * A request may carry a caller AbortSignal (`request.signal`) when a
+ * client-facing layer wants disconnects to cancel upstream work. It
+ * is not part of the typed contract today, so it is read defensively.
+ */
+function callerSignal(
+  request: UnifiedAiRequest | UnifiedEmbeddingRequest,
+): AbortSignal | undefined {
+  return (request as { signal?: AbortSignal }).signal;
+}
 
 export interface GatewayMeta {
   provider: string;
@@ -59,7 +71,8 @@ export class GatewayService {
         const enrichedRequest = { ...request, model: modelId };
         const response = await this.policyService.executeWithPolicy(
           provider.name,
-          () => provider.createResponse(enrichedRequest),
+          (context) => provider.createResponse(enrichedRequest, context),
+          callerSignal(request),
         );
 
         this.latencyTracker.record(provider.name, response.latencyMs);
@@ -120,24 +133,37 @@ export class GatewayService {
         );
 
         const iterator = observedStream[Symbol.asyncIterator]();
-        
-        while (true) {
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Stream idle timeout')), idleTimeout)
-          );
 
-          const result = await Promise.race([
-            iterator.next(),
-            timeoutPromise,
-          ]);
+        try {
+          while (true) {
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const timeoutPromise = new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error('Stream idle timeout')),
+                idleTimeout,
+              );
+            });
 
-          if (result.done) {
-            this.latencyTracker.record(provider.name, Date.now() - start);
-            break;
+            const result = await Promise.race([
+              iterator.next(),
+              timeoutPromise,
+            ]);
+            clearTimeout(timer);
+
+            if (result.done) {
+              this.latencyTracker.record(provider.name, Date.now() - start);
+              break;
+            }
+            yield result.value;
           }
-          yield result.value;
+          return;
+        } finally {
+          // Consumer break, idle timeout, or a mid-stream failure all
+          // land here. Fire-and-forget: an upstream stuck at a pending
+          // next() queues return() behind it, so awaiting it could
+          // hang this generator.
+          void iterator.return?.();
         }
-        return;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         this.logger.warn(`Stream provider ${provider.name} failed: ${lastError.message}`);
@@ -150,7 +176,9 @@ export class GatewayService {
     yield { type: 'error', error: errorMessage };
   }
 
-  async createEmbeddings(request: UnifiedEmbeddingRequest): Promise<UnifiedEmbeddingResponse> {
+  async createEmbeddings(
+    request: UnifiedEmbeddingRequest,
+  ): Promise<UnifiedEmbeddingResponse & UsageObservationCarrier> {
     const decision = this.routingService.route({
       model: request.model,
       stream: false,
@@ -168,7 +196,8 @@ export class GatewayService {
 
     const response = await this.policyService.executeWithPolicy(
       provider.name,
-      () => provider.createEmbeddings(request),
+      (context) => provider.createEmbeddings(request, context),
+      callerSignal(request),
     );
 
     this.latencyTracker.record(provider.name, response.latencyMs);

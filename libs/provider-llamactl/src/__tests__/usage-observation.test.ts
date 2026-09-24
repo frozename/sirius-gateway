@@ -93,7 +93,7 @@ beforeAll(() => {
       return new Response('not found', { status: 404 });
     },
   });
-  port = server.port;
+  port = server.port!;
 });
 
 afterAll(() => {

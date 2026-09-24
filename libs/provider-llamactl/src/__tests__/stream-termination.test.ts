@@ -93,7 +93,7 @@ beforeAll(() => {
       });
     },
   });
-  port = server.port;
+  port = server.port!;
 });
 
 afterAll(() => {

@@ -1,6 +1,13 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { appendUsageBackground, defaultUsageDir } from '@nova/mcp-shared';
-import { UsageRecordSchema, type UsageRecord } from '@nova/contracts';
+import {
+  UsageObservationV1Schema,
+  UsageRecordSchema,
+  UsageRecordV2Schema,
+  projectUsageRecordV2ToV1,
+  type UsageRecord,
+  type UsageRecordV2,
+} from '@nova/contracts';
 
 export const USAGE_RECORDER_DEPS = Symbol('USAGE_RECORDER_DEPS');
 
@@ -43,6 +50,14 @@ export interface UsageRecorderInput {
   /** Optional user tag — callers opt in; privacy-first default is to
    *  leave this blank. */
   user?: string;
+  /** Provenance-tagged usage captured by the adapter (nova
+   *  `onUsageObservation`, surfaced as `metadata.usageObservation`).
+   *  When present the record is built as a V2 in memory and only the
+   *  V1 projection is written — nothing when the observation is not
+   *  fully observed, so fabricated zeros never reach the sink.
+   *  Untyped at the boundary (it arrives through response metadata);
+   *  schema-validated here before use. */
+  observation?: unknown;
 }
 
 export interface UsageRecorderDeps {
@@ -74,6 +89,10 @@ export class UsageRecorderService {
   }
 
   record(input: UsageRecorderInput): void {
+    if (input.observation !== undefined) {
+      this.recordWithObservation(input);
+      return;
+    }
     // Build the record first so schema validation runs on the hot
     // thread — a malformed record should never get queued and then
     // drop silently. The write itself (disk I/O) is deferred.
@@ -104,6 +123,55 @@ export class UsageRecorderService {
     this.deps.schedule(() => {
       this.deps.writer({
         record: validated,
+        dir: this.deps.dir,
+        now: this.deps.now,
+      });
+    });
+  }
+
+  /**
+   * Observation path: build the V2 record in memory, then write only
+   * the V1 projection — and only when every V1 count was fully
+   * observed upstream. Unknown or partial observations write nothing;
+   * a zero would say "upstream reported none" when it really said
+   * nothing at all. The V2 row itself is never written.
+   */
+  private recordWithObservation(input: UsageRecorderInput): void {
+    const parsed = UsageObservationV1Schema.safeParse(input.observation);
+    if (!parsed.success) {
+      this.logger.warn({
+        msg: 'usage observation failed validation — skipping write',
+        error: parsed.error.message,
+      });
+      return;
+    }
+    let v2: UsageRecordV2;
+    try {
+      const candidate: Record<string, unknown> = {
+        v: 2,
+        ts: this.deps.now().toISOString(),
+        provider: input.provider,
+        model: input.model,
+        kind: input.kind,
+        latency_ms: input.latencyMs,
+        observation: parsed.data,
+      };
+      if (input.requestId !== undefined) candidate.request_id = input.requestId;
+      if (input.route !== undefined) candidate.route = input.route;
+      if (input.user !== undefined) candidate.user = input.user;
+      v2 = UsageRecordV2Schema.parse(candidate);
+    } catch (err) {
+      this.logger.warn({
+        msg: 'usage record v2 failed validation — skipping write',
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    const projected = projectUsageRecordV2ToV1(v2);
+    if (projected === null) return;
+    this.deps.schedule(() => {
+      this.deps.writer({
+        record: projected,
         dir: this.deps.dir,
         now: this.deps.now,
       });

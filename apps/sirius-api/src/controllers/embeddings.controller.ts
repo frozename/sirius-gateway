@@ -36,6 +36,7 @@ export class EmbeddingsController {
         totalTokens: response.usage.totalTokens,
         latencyMs: response.latencyMs,
         requestId,
+        observation: response.metadata?.usageObservation,
       });
       res.header('X-Request-Id', requestId);
       return res.send(formatted);

@@ -72,6 +72,7 @@ export class ResponsesController {
           latencyMs: response.latencyMs,
           requestId,
           route: response._gatewayMeta.strategy,
+          observation: response.metadata?.usageObservation,
         });
         res.header('X-Request-Id', requestId);
         return res.send(formatted);

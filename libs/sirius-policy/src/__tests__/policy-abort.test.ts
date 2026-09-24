@@ -47,7 +47,7 @@ beforeAll(() => {
       return new Promise<Response>(() => {});
     },
   });
-  port = server.port;
+  port = server.port!;
 });
 
 afterAll(() => {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { nova } from '@sirius/core';
 import type {
   UnifiedAiRequest as SiriusReq,
@@ -9,6 +10,7 @@ import type {
   ModelInfo as SiriusModelInfo,
   ProviderHealth as SiriusHealth,
   AiProvider,
+  UsageObservationCarrier,
 } from '@sirius/core';
 
 /**
@@ -28,6 +30,13 @@ import type {
 export class LlamactlAdapter implements AiProvider {
   readonly name: string;
   private readonly nova: nova.AiProvider;
+  /**
+   * Per-call usage observations keyed by nova attempt id. nova's
+   * `onUsageObservation` fires inside the awaited upstream call; the
+   * call site then takes (and deletes) its own entry so concurrent
+   * calls and policy retries never cross-attribute counts.
+   */
+  private readonly observations = new Map<string, nova.UsageObservationV1>();
 
   constructor(opts: {
     nodeName: string;
@@ -41,29 +50,91 @@ export class LlamactlAdapter implements AiProvider {
       displayName: opts.displayName ?? `llamactl node ${opts.nodeName}`,
       baseUrl: opts.baseUrl,
       apiKey: opts.apiKey,
+      onUsageObservation: (snapshot) => {
+        // Stream attempts carry no attempt_id — nothing to key them
+        // by, so they are dropped rather than misattributed.
+        if (snapshot.attempt_id) {
+          this.observations.set(snapshot.attempt_id, snapshot.observation);
+        }
+      },
     });
   }
 
-  async createResponse(request: SiriusReq): Promise<SiriusRes> {
+  async createResponse(
+    request: SiriusReq,
+    context?: nova.ProviderExecutionContext,
+  ): Promise<SiriusRes> {
     const novaReq = siriusRequestToNova(request);
-    const novaRes = await this.nova.createResponse(novaReq);
-    return novaResponseToSirius(novaRes, this.name);
+    const attemptId = context?.attemptId ?? randomUUID();
+    try {
+      const novaRes = await this.nova.createResponse(
+        novaReq,
+        executionContext(context, request.requestId, attemptId),
+      );
+      const res = novaResponseToSirius(novaRes, this.name);
+      const observation = this.observations.get(attemptId);
+      return observation
+        ? { ...res, metadata: { usageObservation: observation } }
+        : res;
+    } finally {
+      this.observations.delete(attemptId);
+    }
   }
 
   async *streamResponse(request: SiriusReq): AsyncIterable<SiriusStreamEvent> {
     const novaReq = siriusRequestToNova(request);
     const stream = this.nova.streamResponse?.(novaReq);
     if (!stream) {
-      yield { type: 'done', finishReason: 'stop' };
+      yield {
+        type: 'error',
+        error: `${this.name}: upstream does not support streaming`,
+        code: 'stream_unsupported',
+      };
       return;
     }
-    for await (const ev of stream) {
-      const translated = novaStreamEventToSirius(ev);
-      if (translated) yield translated;
+    let errorYielded = false;
+    try {
+      for await (const ev of stream) {
+        if (ev.type === 'error') {
+          errorYielded = true;
+          yield novaStreamEventToSirius(ev)!;
+          return;
+        }
+        if (ev.type === 'done') {
+          // Truncation must surface as an error, never as a successful
+          // finish — only an upstream-signalled completion maps to
+          // sirius `done`.
+          if (ev.completion === 'upstream') {
+            yield { type: 'done', finishReason: ev.finish_reason ?? 'stop' };
+          } else if (!errorYielded) {
+            yield upstreamEof();
+          }
+          return;
+        }
+        const translated = novaStreamEventToSirius(ev);
+        if (translated) yield translated;
+      }
+      // The iterable ended with no terminal event — same truncation
+      // signature as an `eof` completion.
+      if (!errorYielded) yield upstreamEof();
+    } catch (err) {
+      // A mid-stream transport failure arrives here as a throw; it
+      // must become an error EVENT — the policy retries thrown errors
+      // and a retry would re-emit the partial output upstream of it.
+      if (!errorYielded) {
+        yield {
+          type: 'error',
+          error: err instanceof Error ? err.message : String(err),
+          code: 'upstream_eof',
+        };
+      }
     }
   }
 
-  async createEmbeddings(request: SiriusEmbReq): Promise<SiriusEmbRes> {
+  async createEmbeddings(
+    request: SiriusEmbReq,
+    context?: nova.ProviderExecutionContext,
+  ): Promise<SiriusEmbRes & UsageObservationCarrier> {
     if (!this.nova.createEmbeddings) {
       throw new Error(`${this.name}: embeddings not supported`);
     }
@@ -73,23 +144,33 @@ export class LlamactlAdapter implements AiProvider {
       ...(request.dimensions !== undefined ? { dimensions: request.dimensions } : {}),
       ...(request.user !== undefined ? { user: request.user } : {}),
     };
-    const res = await this.nova.createEmbeddings(novaReq);
-    const started = Date.now();
-    const embeddings: number[][] = res.data.map((row) =>
-      Array.isArray(row.embedding) ? (row.embedding as number[]) : [],
-    );
-    return {
-      id: `emb-${started}`,
-      model: res.model,
-      provider: this.name,
-      embeddings,
-      usage: {
-        inputTokens: res.usage?.prompt_tokens ?? 0,
-        outputTokens: 0,
-        totalTokens: res.usage?.total_tokens ?? 0,
-      },
-      latencyMs: res.latencyMs ?? 0,
-    };
+    const attemptId = context?.attemptId ?? randomUUID();
+    try {
+      const res = await this.nova.createEmbeddings(
+        novaReq,
+        executionContext(context, request.requestId, attemptId),
+      );
+      const observation = this.observations.get(attemptId);
+      const started = Date.now();
+      const embeddings: number[][] = res.data.map((row) =>
+        Array.isArray(row.embedding) ? (row.embedding as number[]) : [],
+      );
+      return {
+        id: `emb-${started}`,
+        model: res.model,
+        provider: this.name,
+        embeddings,
+        usage: {
+          inputTokens: res.usage?.prompt_tokens ?? 0,
+          outputTokens: 0,
+          totalTokens: res.usage?.total_tokens ?? 0,
+        },
+        latencyMs: res.latencyMs ?? 0,
+        ...(observation ? { metadata: { usageObservation: observation } } : {}),
+      };
+    } finally {
+      this.observations.delete(attemptId);
+    }
   }
 
   async listModels(): Promise<SiriusModelInfo[]> {
@@ -132,6 +213,34 @@ export class LlamactlAdapter implements AiProvider {
 }
 
 // ---- sirius ↔ nova translators ---------------------------------------
+
+/**
+ * Forward the caller's execution context into the nova call, filling
+ * in the per-attempt identity sirius owns: `attemptId` identifies this
+ * call within a retried logical request (and keys the observation
+ * map); `requestId` falls back to the sirius request's own id.
+ */
+function executionContext(
+  context: nova.ProviderExecutionContext | undefined,
+  requestId: string | undefined,
+  attemptId: string,
+): nova.ProviderExecutionContext {
+  const rid = context?.requestId ?? requestId;
+  return {
+    ...(context?.signal ? { signal: context.signal } : {}),
+    ...(context?.deadline !== undefined ? { deadline: context.deadline } : {}),
+    ...(rid ? { requestId: rid } : {}),
+    attemptId,
+  };
+}
+
+function upstreamEof(): SiriusStreamEvent {
+  return {
+    type: 'error',
+    error: 'upstream stream ended without a completion signal',
+    code: 'upstream_eof',
+  };
+}
 
 function siriusRequestToNova(req: SiriusReq): nova.UnifiedAiRequest {
   return {
