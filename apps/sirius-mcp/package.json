@@ -15,7 +15,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.0",
     "@nova/contracts": "npm:@novaproto/contracts@0.2.0",
     "@nova/mcp-shared": "npm:@novaproto/mcp-shared@0.2.0",
     "@sirius/provider-fromfile": "workspace:*",
