@@ -1,5 +1,9 @@
 # sirius-gateway
 
+<p align="center">
+  <img src="./.github/branding/logo.png" alt="Sirius logo" width="640" />
+</p>
+
 Unified AI gateway. One OpenAI-compatible endpoint fronting many
 providers — OpenAI, Anthropic, Together, Groq, Mistral, a local
 llama.cpp server via llamactl, and any file-backed stub for testing.
