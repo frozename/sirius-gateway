@@ -5,8 +5,8 @@
     "": {
       "name": "sirius-gateway",
       "dependencies": {
-        "@nova/contracts": "file:../nova/packages/contracts",
-        "@nova/mcp-shared": "file:../nova/packages/mcp-shared",
+        "@nova/contracts": "npm:@novaproto/contracts@0.2.0",
+        "@nova/mcp-shared": "npm:@novaproto/mcp-shared@0.2.0",
         "zod": "^4.3.6",
       },
       "devDependencies": {
@@ -55,8 +55,8 @@
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.29.0",
-        "@nova/contracts": "file:../../../nova/packages/contracts",
-        "@nova/mcp-shared": "file:../../../nova/packages/mcp-shared",
+        "@nova/contracts": "npm:@novaproto/contracts@0.2.0",
+        "@nova/mcp-shared": "npm:@novaproto/mcp-shared@0.2.0",
         "@sirius/provider-fromfile": "workspace:*",
         "yaml": "^2.7.0",
         "zod": "^4.3.6",
@@ -153,9 +153,11 @@
 
     "@nestjs/testing": ["@nestjs/testing@11.1.18", "", { "dependencies": { "tslib": "2.8.1" }, "peerDependencies": { "@nestjs/common": "^11.0.0", "@nestjs/core": "^11.0.0", "@nestjs/microservices": "^11.0.0", "@nestjs/platform-express": "^11.0.0" }, "optionalPeers": ["@nestjs/microservices", "@nestjs/platform-express"] }, "sha512-frzwNlpBgtAzI3hp/qo57DZoRO4RMTH1wST3QUYEhRTHyfPkLpzkWz3jV/mhApXjD0yT56Ptlzn6zuYPLh87Lw=="],
 
-    "@nova/contracts": ["@nova/contracts@file:../nova/packages/contracts", { "dependencies": { "zod": "^4.3.6" }, "devDependencies": { "@types/bun": "^1.3.12", "typescript": "^5.9.3" } }],
+    "@nova/contracts": ["@novaproto/contracts@0.2.0", "", { "dependencies": { "zod": "^4.3.6" } }, "sha512-tuY8uJEY+KNbCY8HVezdAXmtukIYrSnQ2IhnD+BLIalOBex1/XfSLhXVY3E9HXGzp0/RfOMWqpX4TUkgLOY19A=="],
 
-    "@nova/mcp-shared": ["@nova/mcp-shared@file:../nova/packages/mcp-shared", { "devDependencies": { "@types/bun": "^1.3.12", "typescript": "^5.9.3" } }],
+    "@nova/mcp-shared": ["@novaproto/mcp-shared@0.2.0", "", { "dependencies": { "@novaproto/contracts": "0.2.0", "yaml": "^2.7.0" } }, "sha512-8cYSlsHI6jQAkrq7eoPQwBLx/MIQ17VtdlfzPu0mIfETW+JwiRLo0xYpQekhRrIB0SGChiWc19WYUyPJExTUCQ=="],
+
+    "@novaproto/contracts": ["@novaproto/contracts@0.2.0", "", { "dependencies": { "zod": "^4.3.6" } }, "sha512-tuY8uJEY+KNbCY8HVezdAXmtukIYrSnQ2IhnD+BLIalOBex1/XfSLhXVY3E9HXGzp0/RfOMWqpX4TUkgLOY19A=="],
 
     "@nuxt/opencollective": ["@nuxt/opencollective@0.4.1", "", { "dependencies": { "consola": "^3.2.3" }, "bin": { "opencollective": "bin/opencollective.js" } }, "sha512-GXD3wy50qYbxCJ652bDrDzgMr3NFEkIS374+IgFQKkCvk9yiYcLvX2XDYr7UyQxf4wK0e+yqDYRubZ0DtOxnmQ=="],
 
@@ -505,14 +507,6 @@
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
 
-    "@nova/contracts/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
-
-    "@nova/mcp-shared/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
-
-    "@sirius/mcp/@nova/contracts": ["@nova/contracts@file:../nova/packages/contracts", { "dependencies": { "zod": "^4.3.6" }, "devDependencies": { "@types/bun": "^1.3.12", "typescript": "^5.9.3" } }],
-
-    "@sirius/mcp/@nova/mcp-shared": ["@nova/mcp-shared@file:../nova/packages/mcp-shared", { "devDependencies": { "@types/bun": "^1.3.12", "typescript": "^5.9.3" } }],
-
     "@sirius/mcp/@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
 
     "dotenv-expand/dotenv": ["dotenv@16.6.1", "", {}, "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow=="],
@@ -522,10 +516,6 @@
     "light-my-request/process-warning": ["process-warning@4.0.1", "", {}, "sha512-3c2LzQ3rY9d0hc1emcsHhfT9Jwz0cChib/QN89oME2R451w5fy3f0afAhERFZAwrbDU43wk12d0ORBpDVME50Q=="],
 
     "proxy-addr/ipaddr.js": ["ipaddr.js@1.9.1", "", {}, "sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g=="],
-
-    "@nova/contracts/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
-
-    "@nova/mcp-shared/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
     "@sirius/mcp/@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
   }
