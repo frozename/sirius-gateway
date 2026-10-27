@@ -16,7 +16,7 @@ llama.cpp via llamactl, plus a file-backed stub for tests). Routing
 - Zod 4.3+ (via `@nova/contracts`) + `class-validator` at controller
   boundaries.
 - pino + pino-http for logs.
-- `@nova/contracts` + `@nova/mcp-shared` via `file:` deps.
+- `@nova/contracts` + `@nova/mcp-shared` via pinned npm aliases to `@novaproto/*`.
 
 ## Layout
 

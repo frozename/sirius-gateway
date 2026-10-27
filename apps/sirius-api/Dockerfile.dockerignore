@@ -2,9 +2,8 @@
 # `.dockerignore` at the build-context root when this exact file
 # (`<Dockerfile>.dockerignore`) sits next to the Dockerfile.
 #
-# Build context is the PARENT dir that contains both
-# `sirius-gateway/` and `nova/`. Paths below are relative to that
-# root, so the leading segment matters.
+# Build context is the parent directory containing `sirius-gateway/`.
+# Paths below are relative to that root.
 
 # --- sirius-gateway ---
 sirius-gateway/node_modules
@@ -39,27 +38,6 @@ sirius-gateway/**/.DS_Store
 sirius-gateway/.vscode
 sirius-gateway/.idea
 
-# --- nova (sibling workspace, only needed for file: deps) ---
-nova/node_modules
-nova/**/node_modules
-nova/dist
-nova/**/dist
-nova/**/*.tsbuildinfo
-nova/packages/**/src/**/*.js
-nova/packages/**/src/**/*.d.ts
-nova/packages/**/src/**/*.js.map
-nova/packages/**/src/**/*.d.ts.map
-nova/.git
-nova/.env
-nova/.env.*
-nova/**/.env
-nova/**/.env.*
-nova/**/*.log
-nova/.DS_Store
-nova/**/.DS_Store
-nova/.vscode
-nova/.idea
-
 # --- drop every other sibling in the personal/ dir ---
 # Prevents accidentally sucking in llamactl, embersynth, claude-mem, etc.
 # when someone runs `docker build` from the `personal/` parent.
@@ -68,3 +46,5 @@ nova/.idea
 /claude-mem
 /electron-mcp-server
 /open-vibe-island
+
+/nova

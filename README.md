@@ -187,12 +187,11 @@ bun run format
 
 `apps/sirius-api` ships a production-ready multi-stage Dockerfile at
 `apps/sirius-api/Dockerfile`. Build it from the PARENT directory that
-contains both `sirius-gateway/` and `nova/` — the gateway depends on
-`@nova/contracts` + `@nova/mcp-shared` via `file:../nova/packages/*`,
-so `bun install` inside the image needs nova on disk:
+contains `sirius-gateway/`. Nova packages are installed from npm through
+pinned aliases; a sibling Nova checkout is not required:
 
 ```sh
-# From the parent dir that contains both sirius-gateway/ and nova/
+# From the parent directory containing sirius-gateway/
 cd "$(dirname sirius-gateway)"
 docker build \
   -f sirius-gateway/apps/sirius-api/Dockerfile \

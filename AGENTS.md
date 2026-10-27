@@ -20,7 +20,7 @@ Routing + policy + observability + usage metering on top of the
 - **Validation**: Zod 4.3+ (`@nova/contracts`) + `class-validator`
   for DTOs at controller boundaries.
 - **Logging**: pino + pino-http + pino-pretty (dev).
-- **Nova**: `@nova/contracts` + `@nova/mcp-shared` via `file:`.
+- **Nova**: `@nova/contracts` + `@nova/mcp-shared` via pinned npm aliases to `@novaproto/*`.
 
 ## Layout
 
@@ -220,7 +220,7 @@ nova-side code change.
 This repo depends on Nova. After any Nova schema change:
 
 ```bash
-bun install      # refresh file: lockfile
+bun install      # refresh lockfile after updating pinned Nova versions
 bun test         # sirius must stay green
 ```
 
