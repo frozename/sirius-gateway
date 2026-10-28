@@ -133,6 +133,9 @@ export class GatewayService {
       const attemptSignal = options?.signal
         ? AbortSignal.any([attemptController.signal, options.signal])
         : attemptController.signal;
+      // Output from this attempt already reached the client; a
+      // fallback would splice a second completion onto it.
+      let yieldedAny = false;
       try {
         const enrichedRequest = { ...request, model: modelId };
         const start = Date.now();
@@ -170,6 +173,7 @@ export class GatewayService {
               this.latencyTracker.record(provider.name, Date.now() - start);
               break;
             }
+            yieldedAny = true;
             yield result.value;
           }
           return;
@@ -189,6 +193,10 @@ export class GatewayService {
         if (options?.signal?.aborted) {
           // The client is gone — chaining to the next provider would
           // open upstream work nobody is listening for.
+          return;
+        }
+        if (yieldedAny) {
+          yield { type: 'error', error: lastError.message };
           return;
         }
       }

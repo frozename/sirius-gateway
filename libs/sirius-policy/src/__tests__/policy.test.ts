@@ -121,8 +121,6 @@ describe('PolicyService', () => {
     });
 
     it('does NOT retry if failure happens mid-stream', async () => {
-      // NOTE: Current implementation of executeStreamWithPolicy DOES retry if loop fails
-      // Let's verify actual behavior.
       let attempts = 0;
       const operation = async function* () {
         attempts++;
@@ -130,19 +128,18 @@ describe('PolicyService', () => {
         throw new Error('mid-stream fail');
       };
 
-      const events = [];
-      try {
+      const events: string[] = [];
+      const consume = async (): Promise<void> => {
         const stream = policyService.executeStreamWithPolicy('test-provider', operation);
         for await (const event of stream) {
           events.push(event);
         }
-      } catch (e) {
-        // expect to throw after retries
-      }
+      };
 
-      // If it retries, it might yield 'event 1' multiple times
-      expect(attempts).toBe(3); // 1 + 2 retries
-      expect(events).toEqual(['event 1', 'event 1', 'event 1']);
+      await expect(consume()).rejects.toThrow('mid-stream fail');
+      expect(attempts).toBe(1);
+      expect(events).toEqual(['event 1']);
+      expect(policyService.getCircuitBreakerState('test-provider').failures).toBe(1);
     });
   });
 });
