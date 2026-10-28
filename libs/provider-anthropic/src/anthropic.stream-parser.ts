@@ -25,11 +25,10 @@ export async function* parseAnthropicStream(
   const decoder = new TextDecoder();
   let buffer = '';
 
-  // Track tool-call blocks so we can emit the id / name on first delta
-  const toolCallBlocks = new Map<
-    number,
-    { id: string; name: string }
-  >();
+  // Anthropic content-block index -> OpenAI-style tool ordinal (0, 1, ...).
+  // Text blocks share the content-block numbering, so the block index
+  // cannot be used as the tool_calls index (#9).
+  const toolOrdinals = new Map<number, number>();
 
   try {
     while (true) {
@@ -41,12 +40,12 @@ export async function* parseAnthropicStream(
       buffer = lines.pop() ?? '';
 
       for (const line of lines) {
-        yield* processLine(line, toolCallBlocks);
+        yield* processLine(line, toolOrdinals);
       }
     }
 
     if (buffer.trim()) {
-      yield* processLine(buffer, toolCallBlocks);
+      yield* processLine(buffer, toolOrdinals);
     }
   } finally {
     reader.releaseLock();
@@ -55,7 +54,7 @@ export async function* parseAnthropicStream(
 
 function* processLine(
   line: string,
-  toolCallBlocks: Map<number, { id: string; name: string }>,
+  toolOrdinals: Map<number, number>,
 ): Iterable<UnifiedStreamEvent> {
   const trimmed = line.trim();
 
@@ -94,14 +93,13 @@ function* processLine(
     case 'content_block_start': {
       const block = event.content_block;
       if (block.type === 'tool_use') {
-        toolCallBlocks.set(event.index, {
-          id: block.id,
-          name: block.name,
-        });
-        // Emit the initial tool_call_delta with id and name
+        const ordinal = toolOrdinals.size;
+        toolOrdinals.set(event.index, ordinal);
+        // The first fragment of a tool call is the only one that carries
+        // its id and name, as in OpenAI's streaming format.
         yield {
           type: 'tool_call_delta',
-          index: event.index,
+          index: ordinal,
           id: block.id,
           name: block.name,
           argumentsDelta: '',
@@ -114,14 +112,16 @@ function* processLine(
       if (event.delta.type === 'text_delta') {
         yield { type: 'content_delta', delta: event.delta.text };
       } else if (event.delta.type === 'input_json_delta') {
-        const info = toolCallBlocks.get(event.index);
-        yield {
-          type: 'tool_call_delta',
-          index: event.index,
-          id: info?.id,
-          name: info?.name,
-          argumentsDelta: event.delta.partial_json,
-        };
+        const ordinal = toolOrdinals.get(event.index);
+        // A fragment for a block that never started as tool_use has no
+        // tool call to attach to.
+        if (ordinal !== undefined) {
+          yield {
+            type: 'tool_call_delta',
+            index: ordinal,
+            argumentsDelta: event.delta.partial_json,
+          };
+        }
       }
       break;
     }
