@@ -69,8 +69,15 @@ function* processLine(line: string): Iterable<UnifiedStreamEvent> {
     return; // Skip malformed JSON
   }
 
-  const choice = chunk.choices[0];
-  if (!choice) return;
+  const usageEvent = toUsageEvent(chunk);
+
+  // include_usage sends usage in a final chunk with `choices: []`, and error
+  // payloads have no `choices` key at all.
+  const choice = chunk.choices?.[0];
+  if (!choice) {
+    if (usageEvent) yield usageEvent;
+    return;
+  }
 
   const { delta, finish_reason } = choice;
 
@@ -93,16 +100,7 @@ function* processLine(line: string): Iterable<UnifiedStreamEvent> {
   }
 
   // Usage information (some models include it in the final chunk)
-  if (chunk.usage) {
-    yield {
-      type: 'usage',
-      usage: {
-        inputTokens: chunk.usage.prompt_tokens,
-        outputTokens: chunk.usage.completion_tokens,
-        totalTokens: chunk.usage.total_tokens,
-      },
-    };
-  }
+  if (usageEvent) yield usageEvent;
 
   // Finish reason
   if (finish_reason) {
@@ -111,4 +109,16 @@ function* processLine(line: string): Iterable<UnifiedStreamEvent> {
       finishReason: mapFinishReason(finish_reason),
     };
   }
+}
+
+function toUsageEvent(chunk: OpenAiChatChunk): UnifiedStreamEvent | null {
+  if (!chunk.usage) return null;
+  return {
+    type: 'usage',
+    usage: {
+      inputTokens: chunk.usage.prompt_tokens,
+      outputTokens: chunk.usage.completion_tokens,
+      totalTokens: chunk.usage.total_tokens,
+    },
+  };
 }
