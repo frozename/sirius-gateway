@@ -226,5 +226,26 @@ describe('ResponsesController', () => {
       // The client is gone — no end() on a dead socket.
       expect(mockResRaw.end).not.toHaveBeenCalled();
     });
+
+    it('ends the stream in-band when it fails after the SSE head is written', async () => {
+      const parsedReq = { stream: true };
+      mockCompat.parseResponsesRequest.mockReturnValue(parsedReq);
+      mockResRaw.headersSent = true;
+
+      async function* failingStream() {
+        throw new Error('no route for test');
+      }
+      mockGateway.streamResponse.mockReturnValue(failingStream());
+
+      await controller.responses({} as never, mockReq, mockRes);
+
+      const writes = mockResRaw.write.mock.calls.map((call: unknown[]) => String(call[0]));
+      expect(writes).toEqual([
+        `data: ${JSON.stringify({ type: 'error', error: { message: 'no route for test' } })}\n\n`,
+      ]);
+      expect(mockResRaw.end).toHaveBeenCalledTimes(1);
+      expect(mockRes.status).not.toHaveBeenCalled();
+      expect(mockRes.send).not.toHaveBeenCalled();
+    });
   });
 });

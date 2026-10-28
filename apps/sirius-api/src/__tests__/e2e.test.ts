@@ -170,4 +170,64 @@ describe('Sirius Gateway E2E', () => {
       expect(Array.isArray(data.providers)).toBe(true);
     });
   });
+
+  describe('stream with unroutable model', () => {
+    type SseReply = {
+      statusCode: number;
+      headers: Record<string, string | string[] | number | undefined>;
+      body: string;
+    };
+    type SseInjector = {
+      inject: (opts: {
+        method: string;
+        url: string;
+        headers: Record<string, string>;
+        payload: Record<string, unknown>;
+      }) => Promise<SseReply>;
+    };
+
+    const unroutable = "The model 'no-such-model' does not exist or you do not have access to it.";
+
+    function postStream(url: string, payload: Record<string, unknown>): Promise<SseReply> {
+      const server = app.getHttpAdapter().getInstance() as unknown as SseInjector;
+      return server.inject({
+        method: 'POST',
+        url,
+        headers: {
+          authorization: `Bearer ${process.env.SIRIUS_API_KEYS ?? ''}`,
+          'content-type': 'application/json',
+        },
+        payload,
+      });
+    }
+
+    it('/v1/chat/completions ends the SSE stream in-band', async () => {
+      const res = await postStream('/v1/chat/completions', {
+        model: 'no-such-model',
+        messages: [{ role: 'user', content: 'hi' }],
+        stream: true,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(String(res.headers['content-type'])).toContain('text/event-stream');
+      const errorFrame = `data: ${JSON.stringify({
+        error: { message: unroutable, type: 'server_error', param: null, code: null },
+      })}\n\n`;
+      expect(res.body).toBe(`${errorFrame}data: [DONE]\n\n`);
+    });
+
+    it('/v1/responses ends the SSE stream in-band', async () => {
+      const res = await postStream('/v1/responses', {
+        model: 'no-such-model',
+        input: 'hi',
+        stream: true,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(String(res.headers['content-type'])).toContain('text/event-stream');
+      expect(res.body).toBe(
+        `data: ${JSON.stringify({ type: 'error', error: { message: unroutable } })}\n\n`,
+      );
+    });
+  });
 });
