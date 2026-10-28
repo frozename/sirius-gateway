@@ -115,12 +115,20 @@ export class ChatCompletionsController {
       if (res.raw.destroyed) {
         return res;
       }
+      const message =
+        error instanceof Error ? error.message : 'Internal server error';
+      if (res.raw.headersSent) {
+        // The SSE head is already on the wire, so no status line can be
+        // sent; end the stream with an in-band error frame instead.
+        res.raw.write(this.compat.formatSSE(this.compat.formatError(500, message)));
+        res.raw.write(this.compat.formatSSEDone());
+        res.raw.end();
+        return res;
+      }
       if (error instanceof HttpException) {
         res.status(error.getStatus()).header('X-Request-Id', requestId);
         return res.send(error.getResponse());
       }
-      const message =
-        error instanceof Error ? error.message : 'Internal server error';
       const formatted = this.compat.formatError(500, message);
       res.status(500).header('X-Request-Id', requestId);
       return res.send(formatted);
