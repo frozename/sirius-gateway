@@ -268,5 +268,28 @@ describe('ChatCompletionsController', () => {
       expect(mockCompat.formatError).toHaveBeenCalledWith(500, 'Immediate stream failure');
       expect(mockRes.send).toHaveBeenCalledWith({ error: 'formatted' });
     });
+
+    it('ends the stream in-band when it fails after the SSE head is written', async () => {
+      const parsedReq = { model: 'test', stream: true };
+      mockCompat.parseChatCompletionRequest.mockReturnValue(parsedReq);
+      mockResRaw.headersSent = true;
+
+      async function* failingStream() {
+        throw new Error('no route for test');
+      }
+      mockGateway.streamResponse.mockReturnValue(failingStream());
+      mockCompat.formatError.mockReturnValue({ error: 'formatted' });
+      mockCompat.formatSSE.mockImplementation((c: unknown) => `data: ${JSON.stringify(c)}\n\n`);
+      mockCompat.formatSSEDone.mockReturnValue('data: [DONE]\n\n');
+
+      await controller.chatCompletions({} as never, mockReq, mockRes);
+
+      const writes = mockResRaw.write.mock.calls.map((call: unknown[]) => String(call[0]));
+      expect(writes).toEqual([`data: ${JSON.stringify({ error: 'formatted' })}\n\n`, 'data: [DONE]\n\n']);
+      expect(mockCompat.formatError).toHaveBeenCalledWith(500, 'no route for test');
+      expect(mockResRaw.end).toHaveBeenCalledTimes(1);
+      expect(mockRes.status).not.toHaveBeenCalled();
+      expect(mockRes.send).not.toHaveBeenCalled();
+    });
   });
 });
