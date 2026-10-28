@@ -93,4 +93,60 @@ describe('parseOpenAiStream', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({ type: 'content_delta', delta: 'Valid' });
   });
+
+  it('emits usage from the include_usage chunk with empty choices', async () => {
+    const sse =
+      'data: {"id":"1","choices":[{"delta":{"content":"Hi"},"index":0,"finish_reason":"stop"}]}\n\n' +
+      'data: {"id":"1","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}\n\n' +
+      'data: [DONE]';
+
+    const response = createMockResponse(sse);
+    const events: unknown[] = [];
+    for await (const event of parseOpenAiStream(response)) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: 'content_delta', delta: 'Hi' },
+      { type: 'done', finishReason: 'stop' },
+      { type: 'usage', usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
+    ]);
+  });
+
+  it('emits usage from a chunk that has no choices key', async () => {
+    const sse =
+      'data: {"id":"1","usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}\n\n' +
+      'data: [DONE]';
+
+    const response = createMockResponse(sse);
+    const events: unknown[] = [];
+    for await (const event of parseOpenAiStream(response)) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([
+      { type: 'usage', usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10 } },
+    ]);
+  });
+
+  it('does not throw on a chunk without choices', async () => {
+    const sse =
+      'data: {"error":{"message":"overloaded"}}\n\n' +
+      'data: {"id":"1","choices":[{"delta":{"content":"After"},"index":0,"finish_reason":null}]}\n\n' +
+      'data: [DONE]';
+
+    const response = createMockResponse(sse);
+    const events: unknown[] = [];
+    let thrown: unknown = null;
+    try {
+      for await (const event of parseOpenAiStream(response)) {
+        events.push(event);
+      }
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeNull();
+    expect(events).toEqual([{ type: 'content_delta', delta: 'After' }]);
+  });
 });
