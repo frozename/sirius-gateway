@@ -9,6 +9,20 @@ import {
   makeUnifiedRequest,
   makeEmbeddingRequest,
 } from '../../../../libs/sirius-core/src/__tests__/fixtures';
+import type { OllamaChatResponse } from '../ollama.types';
+
+/** A final /api/chat message (done: true) with the given done_reason. */
+function finalResponse(doneReason: string): OllamaChatResponse {
+  return {
+    model: 'llama3',
+    created_at: '2024-01-01T00:00:00Z',
+    message: { role: 'assistant', content: 'The quick brown' },
+    done: true,
+    done_reason: doneReason,
+    prompt_eval_count: 5,
+    eval_count: 3,
+  };
+}
 
 describe('OllamaMapper', () => {
   describe('toOllamaRequest', () => {
@@ -80,6 +94,35 @@ describe('OllamaMapper', () => {
       expect(unified.content[0]!.type).toBe('tool_call');
       expect(unified.content[0]!.toolCall?.function.name).toBe('get_weather');
       expect(unified.content[0]!.toolCall?.function.arguments).toBe('{"loc":"NY"}');
+      expect(unified.finishReason).toBe('tool_calls');
+    });
+
+    // #14: done_reason on the final message decides between 'length' and 'stop'.
+    it('maps done_reason length to finishReason length', () => {
+      const unified = fromOllamaResponse(finalResponse('length'), 'ollama', 1);
+      expect(unified.finishReason).toBe('length');
+    });
+
+    it('maps done_reason stop to finishReason stop', () => {
+      const unified = fromOllamaResponse(finalResponse('stop'), 'ollama', 1);
+      expect(unified.finishReason).toBe('stop');
+    });
+
+    it('maps an unknown done_reason (load) to finishReason stop', () => {
+      const unified = fromOllamaResponse(finalResponse('load'), 'ollama', 1);
+      expect(unified.finishReason).toBe('stop');
+    });
+
+    it('keeps tool_calls when tool calls come with done_reason stop', () => {
+      const raw: OllamaChatResponse = {
+        ...finalResponse('stop'),
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{ function: { name: 'get_weather', arguments: { loc: 'NY' } } }],
+        },
+      };
+      const unified = fromOllamaResponse(raw, 'ollama', 1);
       expect(unified.finishReason).toBe('tool_calls');
     });
   });

@@ -43,6 +43,8 @@ export interface OllamaChatResponse {
   created_at: string;
   message: OllamaMessage;
   done: boolean;
+  // Why generation ended ('stop', 'length', 'load', ...); older Ollama builds omit it.
+  done_reason?: string;
   total_duration?: number;
   prompt_eval_count?: number;
   eval_count?: number;
