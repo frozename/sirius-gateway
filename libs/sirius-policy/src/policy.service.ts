@@ -112,9 +112,11 @@ export class PolicyService {
       const signal = callerSignal
         ? AbortSignal.any([attemptController.signal, callerSignal])
         : attemptController.signal;
+      let yielded = false;
       try {
         const stream = operation(signal);
         for await (const event of stream) {
+          yielded = true;
           yield event;
         }
         this.recordSuccess(providerName);
@@ -129,6 +131,12 @@ export class PolicyService {
           throw lastError;
         }
         this.recordFailure(providerName);
+
+        // The consumer already has this attempt's events; a replay
+        // would hand them over a second time.
+        if (yielded) {
+          throw lastError;
+        }
 
         if (attempt < this.maxRetries) {
           const delay = this.baseDelay * Math.pow(2, attempt);
