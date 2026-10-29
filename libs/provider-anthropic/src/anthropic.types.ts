@@ -51,7 +51,8 @@ export interface AnthropicTool {
 export type AnthropicToolChoice =
   | { type: 'auto' }
   | { type: 'any' }
-  | { type: 'tool'; name: string };
+  | { type: 'tool'; name: string }
+  | { type: 'none' };
 
 // ── Request ─────────────────────────────────────────────────────────
 
