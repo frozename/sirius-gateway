@@ -3,6 +3,15 @@ import type { AnthropicStreamEvent } from './anthropic.types.js';
 import { mapStopReason } from './anthropic.mapper.js';
 
 /**
+ * Per-stream usage state (#32). message_delta usage may omit
+ * input_tokens, so the message_start input count is kept here and
+ * reused for the final usage event.
+ */
+interface StreamUsageState {
+  inputTokens: number | undefined;
+}
+
+/**
  * Parse an Anthropic SSE stream into a sequence of UnifiedStreamEvents.
  *
  * Anthropic uses named SSE events:
@@ -29,6 +38,7 @@ export async function* parseAnthropicStream(
   // Text blocks share the content-block numbering, so the block index
   // cannot be used as the tool_calls index (#9).
   const toolOrdinals = new Map<number, number>();
+  const usageState: StreamUsageState = { inputTokens: undefined };
 
   try {
     while (true) {
@@ -40,12 +50,12 @@ export async function* parseAnthropicStream(
       buffer = lines.pop() ?? '';
 
       for (const line of lines) {
-        yield* processLine(line, toolOrdinals);
+        yield* processLine(line, toolOrdinals, usageState);
       }
     }
 
     if (buffer.trim()) {
-      yield* processLine(buffer, toolOrdinals);
+      yield* processLine(buffer, toolOrdinals, usageState);
     }
   } finally {
     reader.releaseLock();
@@ -55,6 +65,7 @@ export async function* parseAnthropicStream(
 function* processLine(
   line: string,
   toolOrdinals: Map<number, number>,
+  usageState: StreamUsageState,
 ): Iterable<UnifiedStreamEvent> {
   const trimmed = line.trim();
 
@@ -78,6 +89,7 @@ function* processLine(
       // Could emit usage for input tokens from message_start
       const usage = event.message?.usage;
       if (usage) {
+        usageState.inputTokens = usage.input_tokens;
         yield {
           type: 'usage',
           usage: {
@@ -131,14 +143,17 @@ function* processLine(
       break;
 
     case 'message_delta': {
-      // Usage update + stop reason
+      // Usage update + stop reason. The counts are cumulative; when
+      // input_tokens is absent, reuse the message_start count (#32).
       if (event.usage) {
+        const inputTokens = event.usage.input_tokens ?? usageState.inputTokens ?? 0;
+        const outputTokens = event.usage.output_tokens;
         yield {
           type: 'usage',
           usage: {
-            inputTokens: 0,
-            outputTokens: event.usage.output_tokens,
-            totalTokens: event.usage.output_tokens,
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
           },
         };
       }
