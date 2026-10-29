@@ -64,6 +64,32 @@ describe('AnthropicMapper', () => {
       const anthropic2 = toAnthropicRequest(unified2);
       expect(anthropic2.tool_choice).toEqual({ type: 'tool', name: 'test' });
     });
+
+    it('maps toolChoice none to tool_choice none and keeps the tools', () => {
+      const unified = makeUnifiedRequest({
+        tools: [
+          {
+            type: 'function',
+            function: { name: 'get_weather', parameters: { type: 'object' } },
+          },
+        ],
+        toolChoice: 'none',
+      });
+
+      const anthropic = toAnthropicRequest(unified);
+
+      expect(anthropic.tools?.map((t) => t.name)).toEqual(['get_weather']);
+      expect(anthropic.tool_choice).toEqual({ type: 'none' });
+    });
+
+    it('omits tool_choice none when the request has no tools', () => {
+      const anthropic = toAnthropicRequest(
+        makeUnifiedRequest({ toolChoice: 'none' }),
+      );
+
+      expect(anthropic.tools).toBeUndefined();
+      expect(anthropic.tool_choice).toBeUndefined();
+    });
   });
 
   describe('fromAnthropicResponse', () => {
