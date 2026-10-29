@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'bun:test';
+import { HttpException } from '@nestjs/common';
 import { OpenAiCompatService } from '../openai-compat.service';
-import type { UnifiedAiResponse, UnifiedStreamEvent } from '../../../sirius-core/src/index.js';
+import type { OpenAiResponsesInputItem } from '../types/index';
+import type { UnifiedAiResponse, UnifiedMessage, UnifiedStreamEvent } from '../../../sirius-core/src/index.js';
 
 const service = new OpenAiCompatService();
 
@@ -127,6 +129,15 @@ describe('parseEmbeddingRequest', () => {
   });
 });
 
+/** Parses Responses API input items; a thrown error comes back as `name: message` (#18). */
+function parseInputItems(input: OpenAiResponsesInputItem[]): UnifiedMessage[] | string {
+  try {
+    return service.parseResponsesRequest({ model: 'gpt-4o', input }, 'req-resp-items').messages;
+  } catch (error) {
+    return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  }
+}
+
 describe('parseResponsesRequest', () => {
   it('wraps string input as user message', () => {
     const result = service.parseResponsesRequest(
@@ -149,6 +160,97 @@ describe('parseResponsesRequest', () => {
     expect(result.messages[0]!.role).toBe('system');
     expect(result.messages[0]!.content).toBe('Be concise');
     expect(result.messages[1]!.role).toBe('user');
+  });
+
+  // #18: function_call input items are the assistant tool calls of a tool loop.
+  it('maps a function_call round trip to user, assistant tool call and tool messages', () => {
+    const messages = parseInputItems([
+      { type: 'message', role: 'user', content: 'weather in Paris?' },
+      { type: 'function_call', call_id: 'call_1', name: 'get_weather', arguments: '{"city":"Paris"}' },
+      { type: 'function_call_output', call_id: 'call_1', output: '18C' },
+    ]);
+
+    expect(messages).toEqual([
+      { role: 'user', content: 'weather in Paris?' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Paris"}' } },
+        ],
+      },
+      { role: 'tool', content: '18C', toolCallId: 'call_1' },
+    ]);
+  });
+
+  it('merges consecutive function_call items into one assistant message', () => {
+    const messages = parseInputItems([
+      { type: 'message', role: 'user', content: 'weather in Paris and Rome?' },
+      { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'get_weather', arguments: '{"city":"Paris"}', status: 'completed' },
+      { type: 'function_call', id: 'fc_2', call_id: 'call_2', name: 'get_weather', arguments: '{"city":"Rome"}', status: 'completed' },
+      { type: 'function_call_output', call_id: 'call_1', output: '18C' },
+      { type: 'function_call_output', call_id: 'call_2', output: '21C' },
+    ]);
+
+    expect(messages).toEqual([
+      { role: 'user', content: 'weather in Paris and Rome?' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Paris"}' } },
+          { id: 'call_2', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Rome"}' } },
+        ],
+      },
+      { role: 'tool', content: '18C', toolCallId: 'call_1' },
+      { role: 'tool', content: '21C', toolCallId: 'call_2' },
+    ]);
+  });
+
+  it('attaches a function_call to the assistant message right before it', () => {
+    const messages = parseInputItems([
+      { type: 'message', role: 'user', content: 'weather in Paris?' },
+      { type: 'message', role: 'assistant', content: 'Let me check.' },
+      { type: 'function_call', call_id: 'call_1', name: 'get_weather', arguments: '{"city":"Paris"}' },
+      { type: 'function_call_output', call_id: 'call_1', output: '18C' },
+    ]);
+
+    expect(messages).toEqual([
+      { role: 'user', content: 'weather in Paris?' },
+      {
+        role: 'assistant',
+        content: 'Let me check.',
+        toolCalls: [
+          { id: 'call_1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Paris"}' } },
+        ],
+      },
+      { role: 'tool', content: '18C', toolCallId: 'call_1' },
+    ]);
+  });
+
+  it('rejects a message item without content with a 400, not a TypeError', () => {
+    const contentless = { type: 'message', role: 'user' } as unknown as OpenAiResponsesInputItem;
+    let caught: unknown;
+    try {
+      service.parseResponsesRequest(
+        { model: 'gpt-4o', input: [{ type: 'message', role: 'user', content: 'hi' }, contentless] },
+        'req-resp-no-content',
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(HttpException);
+    const httpError = caught as HttpException;
+    expect(httpError.getStatus()).toBe(400);
+    expect(httpError.getResponse()).toEqual({
+      error: {
+        message: 'Input item at index 1 has no content',
+        type: 'invalid_request_error',
+        param: null,
+        code: null,
+      },
+    });
   });
 });
 
