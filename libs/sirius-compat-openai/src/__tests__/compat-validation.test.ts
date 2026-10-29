@@ -42,6 +42,21 @@ function chatError(body: unknown): HttpException {
   );
 }
 
+function responsesError(body: unknown): HttpException {
+  return catchHttpError(() =>
+    service.parseResponsesRequest(body as OpenAiResponsesRequest, 'req-r'),
+  );
+}
+
+/** Parses a Responses API body; a thrown error comes back as `name: message` (#39). */
+function responsesMessages(body: unknown): unknown {
+  try {
+    return service.parseResponsesRequest(body as OpenAiResponsesRequest, 'req-r').messages;
+  } catch (error) {
+    return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  }
+}
+
 function invalidRequest(message: string, code: string | null): OpenAiErrorResponse {
   return { error: { message, type: 'invalid_request_error', param: null, code } };
 }
@@ -333,6 +348,59 @@ describe('parseResponsesRequest and parseEmbeddingRequest', () => {
         invalidRequest("The 'input' field is required.", 'input_required'),
       );
     }
+  });
+
+  it('rejects an object, number or boolean input with a 400 and a null code (#39)', () => {
+    const inputs: unknown[] = [{ role: 'user', content: 'hi' }, 42, true];
+    for (const input of inputs) {
+      const error = responsesError({ model: 'gpt-4o', input });
+      expect(error.getStatus()).toBe(400);
+      expect(error.getResponse()).toEqual(
+        invalidRequest("The 'input' field must be a string or an array.", null),
+      );
+    }
+  });
+
+  it('rejects a null input item with a 400 and a null code (#39)', () => {
+    const error = responsesError({
+      model: 'gpt-4o',
+      input: [{ type: 'message', role: 'user', content: 'hi' }, null],
+    });
+    expect(error.getStatus()).toBe(400);
+    expect(error.getResponse()).toEqual(
+      invalidRequest('Input item at index 1 must be an object.', null),
+    );
+  });
+
+  it('rejects a string or number input item as not an object (#39)', () => {
+    const items: unknown[] = ['hi', 42];
+    for (const item of items) {
+      const error = responsesError({ model: 'gpt-4o', input: [item] });
+      expect(error.getStatus()).toBe(400);
+      expect(error.getResponse()).toEqual(
+        invalidRequest('Input item at index 0 must be an object.', null),
+      );
+    }
+  });
+
+  it('skips null content parts and joins the remaining text parts (#39)', () => {
+    const mixed = responsesMessages({
+      model: 'gpt-4o',
+      input: [
+        {
+          type: 'message',
+          role: 'user',
+          content: [null, { type: 'input_text', text: 'a' }, null, { type: 'input_text', text: 'b' }],
+        },
+      ],
+    });
+    expect(mixed).toEqual([{ role: 'user', content: 'ab' }]);
+
+    const onlyNull = responsesMessages({
+      model: 'gpt-4o',
+      input: [{ type: 'message', role: 'user', content: [null] }],
+    });
+    expect(onlyNull).toEqual([{ role: 'user', content: '' }]);
   });
 
   it('rejects an embedding request without input with 400 input_required', () => {
