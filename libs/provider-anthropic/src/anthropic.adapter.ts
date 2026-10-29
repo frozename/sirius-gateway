@@ -9,6 +9,7 @@ import type {
   UnifiedEmbeddingResponse,
   UnifiedStreamEvent,
 } from '@sirius/core';
+import type { ProviderExecutionContext } from '@nova/contracts';
 
 import {
   fromAnthropicResponse,
@@ -47,7 +48,10 @@ export class AnthropicAdapter implements AiProvider {
 
   // ── Chat completion (non-streaming) ─────────────────────────────
 
-  async createResponse(request: UnifiedAiRequest): Promise<UnifiedAiResponse> {
+  async createResponse(
+    request: UnifiedAiRequest,
+    context?: ProviderExecutionContext,
+  ): Promise<UnifiedAiResponse> {
     const anthropicRequest = toAnthropicRequest({ ...request, stream: false });
     const start = Date.now();
 
@@ -55,6 +59,7 @@ export class AnthropicAdapter implements AiProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(anthropicRequest),
+      signal: context?.signal,
     });
 
     if (!res.ok) {
@@ -74,6 +79,7 @@ export class AnthropicAdapter implements AiProvider {
 
   async *streamResponse(
     request: UnifiedAiRequest,
+    signal?: AbortSignal,
   ): AsyncIterable<UnifiedStreamEvent> {
     const anthropicRequest = toAnthropicRequest({ ...request, stream: true });
 
@@ -81,6 +87,7 @@ export class AnthropicAdapter implements AiProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(anthropicRequest),
+      signal,
     });
 
     if (!res.ok) {

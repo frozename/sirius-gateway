@@ -9,6 +9,7 @@ import type {
   UnifiedEmbeddingResponse,
   UnifiedStreamEvent,
 } from '@sirius/core';
+import type { ProviderExecutionContext } from '@nova/contracts';
 
 import {
   fromOllamaEmbedResponse,
@@ -39,7 +40,10 @@ export class OllamaAdapter implements AiProvider {
 
   // ── Chat completion (non-streaming) ─────────────────────────────
 
-  async createResponse(request: UnifiedAiRequest): Promise<UnifiedAiResponse> {
+  async createResponse(
+    request: UnifiedAiRequest,
+    context?: ProviderExecutionContext,
+  ): Promise<UnifiedAiResponse> {
     const ollamaRequest = toOllamaRequest({ ...request, stream: false });
     const start = Date.now();
 
@@ -47,6 +51,7 @@ export class OllamaAdapter implements AiProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(ollamaRequest),
+      signal: context?.signal,
     });
 
     if (!res.ok) {
@@ -64,6 +69,7 @@ export class OllamaAdapter implements AiProvider {
 
   async *streamResponse(
     request: UnifiedAiRequest,
+    signal?: AbortSignal,
   ): AsyncIterable<UnifiedStreamEvent> {
     const ollamaRequest = toOllamaRequest({ ...request, stream: true });
 
@@ -71,6 +77,7 @@ export class OllamaAdapter implements AiProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(ollamaRequest),
+      signal,
     });
 
     if (!res.ok) {
@@ -91,6 +98,7 @@ export class OllamaAdapter implements AiProvider {
 
   async createEmbeddings(
     request: UnifiedEmbeddingRequest,
+    context?: ProviderExecutionContext,
   ): Promise<UnifiedEmbeddingResponse> {
     const embedRequest = toOllamaEmbedRequest(request);
     const start = Date.now();
@@ -99,6 +107,7 @@ export class OllamaAdapter implements AiProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(embedRequest),
+      signal: context?.signal,
     });
 
     if (!res.ok) {
