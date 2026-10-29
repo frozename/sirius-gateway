@@ -116,7 +116,8 @@ export interface AnthropicStreamContentBlockStop {
 export interface AnthropicStreamMessageDelta {
   type: 'message_delta';
   delta: { stop_reason: string };
-  usage: { output_tokens: number };
+  // Cumulative counts; input_tokens is optional and may be absent (#32).
+  usage: { output_tokens: number; input_tokens?: number };
 }
 
 export interface AnthropicStreamMessageStop {
