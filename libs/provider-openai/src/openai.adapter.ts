@@ -9,6 +9,7 @@ import type {
   UnifiedEmbeddingResponse,
   UnifiedStreamEvent,
 } from '@sirius/core';
+import type { ProviderExecutionContext } from '@nova/contracts';
 
 import {
   fromOpenAiEmbeddingResponse,
@@ -40,7 +41,10 @@ export class OpenAiAdapter implements AiProvider {
 
   // ── Chat completion (non-streaming) ─────────────────────────────
 
-  async createResponse(request: UnifiedAiRequest): Promise<UnifiedAiResponse> {
+  async createResponse(
+    request: UnifiedAiRequest,
+    context?: ProviderExecutionContext,
+  ): Promise<UnifiedAiResponse> {
     const openAiRequest = toOpenAiRequest({ ...request, stream: false });
     const start = Date.now();
 
@@ -48,6 +52,7 @@ export class OpenAiAdapter implements AiProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(openAiRequest),
+      signal: context?.signal,
     });
 
     if (!res.ok) {
@@ -67,6 +72,7 @@ export class OpenAiAdapter implements AiProvider {
 
   async *streamResponse(
     request: UnifiedAiRequest,
+    signal?: AbortSignal,
   ): AsyncIterable<UnifiedStreamEvent> {
     const openAiRequest = toOpenAiRequest({ ...request, stream: true });
 
@@ -74,6 +80,7 @@ export class OpenAiAdapter implements AiProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(openAiRequest),
+      signal,
     });
 
     if (!res.ok) {
@@ -94,6 +101,7 @@ export class OpenAiAdapter implements AiProvider {
 
   async createEmbeddings(
     request: UnifiedEmbeddingRequest,
+    context?: ProviderExecutionContext,
   ): Promise<UnifiedEmbeddingResponse> {
     const embeddingRequest = toOpenAiEmbeddingRequest(request);
     const start = Date.now();
@@ -102,6 +110,7 @@ export class OpenAiAdapter implements AiProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(embeddingRequest),
+      signal: context?.signal,
     });
 
     if (!res.ok) {
