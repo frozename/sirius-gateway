@@ -1,7 +1,13 @@
 import { Injectable, Module, type DynamicModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProviderRegistry, nova } from '@sirius/core';
-import type { AiProvider, ModelInfo, ProviderHealth } from '@sirius/core';
+import type {
+  AiProvider,
+  ModelInfo,
+  ProviderHealth,
+  UnifiedAiRequest,
+  UnifiedContentPart,
+} from '@sirius/core';
 import { loadProvidersFile, resolveApiKeyRef, resolveFilePath } from './loader.js';
 
 /**
@@ -220,6 +226,51 @@ export function overlayAnthropicNativeAuth(
 }
 
 /**
+ * Sirius request -> nova request, shared by createResponse and
+ * streamResponse so both paths carry content parts, tool fields and
+ * sampling params (#37). Mirrors LlamactlAdapter's siriusRequestToNova.
+ */
+function toNovaRequest(req: UnifiedAiRequest, stream: boolean): nova.UnifiedAiRequest {
+  return {
+    model: req.model,
+    messages: req.messages.map((m) => ({
+      role: m.role as nova.Role,
+      content: typeof m.content === 'string' ? m.content : toNovaContent(m.content),
+      ...(m.name !== undefined ? { name: m.name } : {}),
+      ...(m.toolCallId !== undefined ? { tool_call_id: m.toolCallId } : {}),
+      ...(m.toolCalls
+        ? {
+            tool_calls: m.toolCalls.map((tc) => ({
+              id: tc.id,
+              type: 'function' as const,
+              function: tc.function,
+            })),
+          }
+        : {}),
+    })),
+    stream,
+    ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
+    ...(req.topP !== undefined ? { top_p: req.topP } : {}),
+    ...(req.maxTokens !== undefined ? { max_tokens: req.maxTokens } : {}),
+  };
+}
+
+function toNovaContent(parts: UnifiedContentPart[]): nova.ContentBlock[] {
+  return parts.map((p): nova.ContentBlock => {
+    if (p.type === 'text') {
+      return { type: 'text', text: p.text ?? '' };
+    }
+    return {
+      type: 'image_url',
+      image_url: {
+        url: p.imageUrl ?? '',
+        ...(p.detail ? { detail: p.detail } : {}),
+      },
+    };
+  });
+}
+
+/**
  * Minimal sirius-legacy AiProvider shim around a nova provider.
  * Keeps the `GatewayService` happy during the nova migration by
  * translating response / stream / model / health shapes at the
@@ -233,17 +284,7 @@ export function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider
   return {
     name,
     async createResponse(req, context?: nova.ProviderExecutionContext) {
-      const novaReq: nova.UnifiedAiRequest = {
-        model: req.model,
-        messages: req.messages.map((m) => ({
-          role: m.role as nova.Role,
-          content: typeof m.content === 'string' ? m.content : '',
-        })),
-        stream: req.stream,
-        ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
-        ...(req.topP !== undefined ? { top_p: req.topP } : {}),
-        ...(req.maxTokens !== undefined ? { max_tokens: req.maxTokens } : {}),
-      };
+      const novaReq = toNovaRequest(req, req.stream);
       const res = await core.createResponse(novaReq, context);
       const choice = res.choices[0];
       const content =
@@ -263,14 +304,7 @@ export function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider
       };
     },
     async *streamResponse(req, signal?: AbortSignal) {
-      const novaReq: nova.UnifiedAiRequest = {
-        model: req.model,
-        messages: req.messages.map((m) => ({
-          role: m.role as nova.Role,
-          content: typeof m.content === 'string' ? m.content : '',
-        })),
-        stream: true,
-      };
+      const novaReq = toNovaRequest(req, true);
       const stream = core.streamResponse?.(novaReq, signal);
       if (!stream) {
         yield { type: 'done', finishReason: 'stop' };
