@@ -10,6 +10,7 @@ import {
   makeEmbeddingRequest,
 } from '../../../../libs/sirius-core/src/__tests__/fixtures';
 import type { OllamaChatResponse } from '../ollama.types';
+import type { UnifiedAiRequest } from '@sirius/core';
 
 /** A final /api/chat message (done: true) with the given done_reason. */
 function finalResponse(doneReason: string): OllamaChatResponse {
@@ -22,6 +23,24 @@ function finalResponse(doneReason: string): OllamaChatResponse {
     prompt_eval_count: 5,
     eval_count: 3,
   };
+}
+
+/** #21: a user turn, one assistant tool call with the given arguments string, and its tool result. */
+function toolCallHistory(toolArguments: string): UnifiedAiRequest {
+  return makeUnifiedRequest({
+    model: 'llama3',
+    messages: [
+      { role: 'user', content: 'weather in NY?' },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [
+          { id: 'c1', type: 'function', function: { name: 'get_weather', arguments: toolArguments } },
+        ],
+      },
+      { role: 'tool', content: '72F', toolCallId: 'c1' },
+    ],
+  });
 }
 
 describe('OllamaMapper', () => {
@@ -57,6 +76,77 @@ describe('OllamaMapper', () => {
       const msg = ollama.messages[0]!;
       expect(msg.content).toBe('Analyze this');
       expect(msg.images).toEqual(['base64-data']);
+    });
+
+    it('maps assistant toolCalls to tool_calls with parsed object arguments (#21)', () => {
+      const ollama = toOllamaRequest(toolCallHistory('{"loc":"NY"}'));
+
+      expect(ollama.messages).toHaveLength(3);
+      expect(ollama.messages[1]).toEqual({
+        role: 'assistant',
+        content: '',
+        tool_calls: [{ function: { name: 'get_weather', arguments: { loc: 'NY' } } }],
+      });
+      expect(ollama.messages[2]).toEqual({ role: 'tool', content: '72F' });
+    });
+
+    it('falls back to {} for empty, malformed or non-object arguments (#21)', () => {
+      expect(() => toOllamaRequest(toolCallHistory('not json'))).not.toThrow();
+
+      const fallbacks: string[] = ['not json', '', '[1,2]', '"text"', '42', 'null'];
+      for (const raw of fallbacks) {
+        const ollama = toOllamaRequest(toolCallHistory(raw));
+        expect(ollama.messages[1]?.tool_calls).toEqual([
+          { function: { name: 'get_weather', arguments: {} } },
+        ]);
+      }
+    });
+
+    it('maps every tool call of one assistant turn in order (#21)', () => {
+      const ollama = toOllamaRequest(
+        makeUnifiedRequest({
+          messages: [
+            {
+              role: 'assistant',
+              content: 'Checking both.',
+              toolCalls: [
+                { id: 'c1', type: 'function', function: { name: 'get_weather', arguments: '{"loc":"NY"}' } },
+                { id: 'c2', type: 'function', function: { name: 'get_time', arguments: '{"tz":"EST","opts":{"h24":true}}' } },
+              ],
+            },
+          ],
+        }),
+      );
+
+      expect(ollama.messages[0]?.content).toBe('Checking both.');
+      expect(ollama.messages[0]?.tool_calls).toEqual([
+        { function: { name: 'get_weather', arguments: { loc: 'NY' } } },
+        { function: { name: 'get_time', arguments: { tz: 'EST', opts: { h24: true } } } },
+      ]);
+    });
+
+    it('adds no tool_calls key to messages without assistant tool calls (#21)', () => {
+      const ollama = toOllamaRequest(
+        makeUnifiedRequest({
+          messages: [
+            { role: 'user', content: 'Hi' },
+            { role: 'assistant', content: 'Hello' },
+            { role: 'assistant', content: '', toolCalls: [] },
+            {
+              role: 'user',
+              content: 'odd',
+              toolCalls: [{ id: 'c9', type: 'function', function: { name: 'noop', arguments: '{}' } }],
+            },
+          ],
+        }),
+      );
+
+      expect(ollama.messages.map((m) => Object.keys(m))).toEqual([
+        ['role', 'content'],
+        ['role', 'content'],
+        ['role', 'content'],
+        ['role', 'content'],
+      ]);
     });
   });
 

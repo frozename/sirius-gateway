@@ -18,6 +18,24 @@ import type {
 
 // ── Unified -> Ollama ───────────────────────────────────────────────
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Ollama wants tool call arguments as an object, while unified tool calls
+ * carry the client's JSON string. Empty, malformed or non-object strings
+ * become {} so a bad client value cannot throw inside the retry loop (#21).
+ */
+function parseToolArguments(raw: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isJsonObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function mapMessage(msg: UnifiedMessage): OllamaMessage {
   const content =
     typeof msg.content === 'string'
@@ -38,6 +56,17 @@ function mapMessage(msg: UnifiedMessage): OllamaMessage {
       .filter((p) => p.type === 'image_url' && p.imageUrl)
       .map((p) => p.imageUrl!);
     if (images.length > 0) result.images = images;
+  }
+
+  // Assistant turns that called tools must carry those calls, or the next
+  // tool result answers a call the model cannot see (#21).
+  if (msg.role === 'assistant' && msg.toolCalls?.length) {
+    result.tool_calls = msg.toolCalls.map((tc) => ({
+      function: {
+        name: tc.function.name,
+        arguments: parseToolArguments(tc.function.arguments),
+      },
+    }));
   }
 
   return result;
