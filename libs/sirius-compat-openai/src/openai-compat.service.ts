@@ -101,6 +101,15 @@ export class OpenAiCompatService {
     }
 
     const messages = body.messages.map((msg, index) => {
+      // A null entry or a non-object message is a client error, not a
+      // TypeError on msg.role (#33).
+      if (typeof msg !== 'object' || msg === null) {
+        throw this.createHttpError(
+          HttpStatus.BAD_REQUEST,
+          `Message at index ${index} must be an object.`,
+          'invalid_request_error',
+        );
+      }
       if (!msg.role) {
         throw this.createHttpError(
           HttpStatus.BAD_REQUEST,
@@ -108,10 +117,19 @@ export class OpenAiCompatService {
           'invalid_request_error',
         );
       }
-      if (msg.role !== 'assistant' && msg.content === undefined) {
+      if (msg.role !== 'assistant' && msg.content == null) {
         throw this.createHttpError(
           HttpStatus.BAD_REQUEST,
           `Message at index ${index} is missing 'content'.`,
+          'invalid_request_error',
+        );
+      }
+      // mapOpenAiMessage calls content.map on any non-string user content,
+      // so anything but a string or an array is rejected here (#33).
+      if (msg.role === 'user' && typeof msg.content !== 'string' && !Array.isArray(msg.content)) {
+        throw this.createHttpError(
+          HttpStatus.BAD_REQUEST,
+          `Message at index ${index} has invalid 'content'.`,
           'invalid_request_error',
         );
       }
