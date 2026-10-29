@@ -238,6 +238,16 @@ export class OpenAiCompatService {
       );
     }
 
+    // An object, number or boolean input is a client error, not a
+    // TypeError on body.input.entries (#39).
+    if (typeof body.input !== 'string' && !Array.isArray(body.input)) {
+      throw this.createHttpError(
+        HttpStatus.BAD_REQUEST,
+        "The 'input' field must be a string or an array.",
+        'invalid_request_error',
+      );
+    }
+
     const messages: UnifiedMessage[] = [];
 
     // Prepend instructions as a system message
@@ -249,6 +259,15 @@ export class OpenAiCompatService {
       messages.push({ role: 'user', content: body.input });
     } else {
       for (const [index, item] of body.input.entries()) {
+        // A null or non-object item is a client error, not a TypeError
+        // on item.type (#39).
+        if (typeof item !== 'object' || item === null) {
+          throw this.createHttpError(
+            HttpStatus.BAD_REQUEST,
+            `Input item at index ${index} must be an object.`,
+            'invalid_request_error',
+          );
+        }
         if (item.type === 'function_call') {
           this.appendResponsesFunctionCall(messages, item);
         } else {
@@ -687,8 +706,9 @@ export class OpenAiCompatService {
     if (typeof item.content === 'string') {
       content = item.content;
     } else if (Array.isArray(item.content)) {
+      // Null and non-text parts are skipped, not a TypeError on p.text (#39).
       content = item.content
-        .filter((p) => p.text)
+        .filter((p) => typeof p === 'object' && p !== null && typeof p.text === 'string' && p.text)
         .map((p) => p.text!)
         .join('');
     } else {
