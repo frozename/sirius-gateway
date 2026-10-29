@@ -71,7 +71,7 @@ function mapToolChoice(
   choice: UnifiedAiRequest['toolChoice'],
 ): AnthropicToolChoice | undefined {
   if (!choice) return undefined;
-  if (choice === 'none') return undefined; // Anthropic has no "none"; simply omit tools
+  if (choice === 'none') return { type: 'none' };
   if (choice === 'auto') return { type: 'auto' };
   if (choice === 'required') return { type: 'any' };
   if (typeof choice === 'object' && choice.type === 'function') {
@@ -135,7 +135,10 @@ export function toAnthropicRequest(
   }
 
   const toolChoice = mapToolChoice(unified.toolChoice);
-  if (toolChoice) req.tool_choice = toolChoice;
+  // Without tools there is nothing to forbid, so 'none' stays off the wire (#22).
+  if (toolChoice && (toolChoice.type !== 'none' || req.tools)) {
+    req.tool_choice = toolChoice;
+  }
 
   return req;
 }
