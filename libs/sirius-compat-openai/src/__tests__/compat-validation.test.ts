@@ -149,6 +149,55 @@ describe('parseChatCompletionRequest validation', () => {
     );
   });
 
+  it('rejects a user message with null content as missing content (#33)', () => {
+    const error = chatError({ model: 'gpt-4o', messages: [{ role: 'user', content: null }] });
+    expect(error.getStatus()).toBe(400);
+    expect(error.getResponse()).toEqual(
+      invalidRequest("Message at index 0 is missing 'content'.", null),
+    );
+  });
+
+  it('rejects a null message entry with a 400 and a null code (#33)', () => {
+    const error = chatError({ model: 'gpt-4o', messages: [{ role: 'user', content: 'Hi' }, null] });
+    expect(error.getStatus()).toBe(400);
+    expect(error.getResponse()).toEqual(
+      invalidRequest('Message at index 1 must be an object.', null),
+    );
+  });
+
+  it('rejects user content that is neither a string nor an array with a 400 (#33)', () => {
+    const contents: unknown[] = [42, { text: 'Hi' }, true];
+    for (const content of contents) {
+      const error = chatError({ model: 'gpt-4o', messages: [{ role: 'user', content }] });
+      expect(error.getStatus()).toBe(400);
+      expect(error.getResponse()).toEqual(
+        invalidRequest("Message at index 0 has invalid 'content'.", null),
+      );
+    }
+  });
+
+  it('rejects null content on system and tool messages as missing content (#33)', () => {
+    const messages: unknown[] = [
+      { role: 'system', content: null },
+      { role: 'tool', content: null, tool_call_id: 'call_1' },
+    ];
+    for (const message of messages) {
+      const error = chatError({ model: 'gpt-4o', messages: [message] });
+      expect(error.getStatus()).toBe(400);
+      expect(error.getResponse()).toEqual(
+        invalidRequest("Message at index 0 is missing 'content'.", null),
+      );
+    }
+  });
+
+  it('still accepts an assistant message with null content and maps it to empty content (#33)', () => {
+    const result = service.parseChatCompletionRequest(
+      chatBody({ messages: [{ role: 'user', content: 'Hi' }, { role: 'assistant', content: null }] }),
+      'req-v',
+    );
+    expect(result.messages[1]).toEqual({ role: 'assistant', content: '' });
+  });
+
   it('accepts an assistant message without content and maps it to empty content', () => {
     const result = service.parseChatCompletionRequest(
       chatBody({ messages: [{ role: 'user', content: 'Hi' }, { role: 'assistant' }] }),
