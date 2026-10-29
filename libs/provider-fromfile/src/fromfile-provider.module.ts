@@ -223,12 +223,16 @@ export function overlayAnthropicNativeAuth(
  * Minimal sirius-legacy AiProvider shim around a nova provider.
  * Keeps the `GatewayService` happy during the nova migration by
  * translating response / stream / model / health shapes at the
- * boundary. Identical pattern to `LlamactlAdapter`.
+ * boundary. Identical pattern to `LlamactlAdapter`: the caller's
+ * execution context and stream signal reach the nova core unchanged,
+ * so a disconnect or policy timeout aborts the upstream request (#13).
+ *
+ * Exported for the unit test to reach directly.
  */
-function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider {
+export function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider {
   return {
     name,
-    async createResponse(req) {
+    async createResponse(req, context?: nova.ProviderExecutionContext) {
       const novaReq: nova.UnifiedAiRequest = {
         model: req.model,
         messages: req.messages.map((m) => ({
@@ -240,7 +244,7 @@ function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider {
         ...(req.topP !== undefined ? { top_p: req.topP } : {}),
         ...(req.maxTokens !== undefined ? { max_tokens: req.maxTokens } : {}),
       };
-      const res = await core.createResponse(novaReq);
+      const res = await core.createResponse(novaReq, context);
       const choice = res.choices[0];
       const content =
         typeof choice?.message.content === 'string' ? choice.message.content : '';
@@ -258,7 +262,7 @@ function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider {
         latencyMs: res.latencyMs ?? 0,
       };
     },
-    async *streamResponse(req) {
+    async *streamResponse(req, signal?: AbortSignal) {
       const novaReq: nova.UnifiedAiRequest = {
         model: req.model,
         messages: req.messages.map((m) => ({
@@ -267,7 +271,7 @@ function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider {
         })),
         stream: true,
       };
-      const stream = core.streamResponse?.(novaReq);
+      const stream = core.streamResponse?.(novaReq, signal);
       if (!stream) {
         yield { type: 'done', finishReason: 'stop' };
         return;
@@ -289,7 +293,7 @@ function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider {
         }
       }
     },
-    async createEmbeddings(req) {
+    async createEmbeddings(req, context?: nova.ProviderExecutionContext) {
       if (!core.createEmbeddings) {
         throw new Error(`${name}: embeddings not supported`);
       }
@@ -298,7 +302,7 @@ function toSiriusAdapter(name: string, core: nova.AiProvider): AiProvider {
         input: req.input,
         ...(req.dimensions !== undefined ? { dimensions: req.dimensions } : {}),
         ...(req.user !== undefined ? { user: req.user } : {}),
-      });
+      }, context);
       return {
         id: `emb-${Date.now()}`,
         model: res.model,
