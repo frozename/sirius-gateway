@@ -75,6 +75,20 @@ export function toOllamaRequest(unified: UnifiedAiRequest): OllamaChatRequest {
 
 // ── Ollama -> Unified ───────────────────────────────────────────────
 
+/**
+ * Ollama's final /api/chat message says why generation ended in
+ * `done_reason`. Tool calls win; only 'length' is surfaced, and any other
+ * or missing value (older Ollama builds omit it) stays 'stop' (#14).
+ */
+export function mapOllamaFinishReason(
+  hasToolCalls: boolean,
+  doneReason: string | undefined,
+): UnifiedFinishReason {
+  if (hasToolCalls) return 'tool_calls';
+  if (doneReason === 'length') return 'length';
+  return 'stop';
+}
+
 export function fromOllamaResponse(
   raw: OllamaChatResponse,
   provider: string,
@@ -102,8 +116,10 @@ export function fromOllamaResponse(
     }
   }
 
-  const finishReason: UnifiedFinishReason =
-    raw.message.tool_calls?.length ? 'tool_calls' : 'stop';
+  const finishReason = mapOllamaFinishReason(
+    Boolean(raw.message.tool_calls?.length),
+    raw.done_reason,
+  );
 
   return {
     id: `ollama-${Date.now()}`,

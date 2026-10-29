@@ -1,5 +1,6 @@
 import type { UnifiedStreamEvent } from '@sirius/core';
 import type { OllamaChatChunk } from './ollama.types.js';
+import { mapOllamaFinishReason } from './ollama.mapper.js';
 
 /**
  * Parse an Ollama NDJSON stream into a sequence of UnifiedStreamEvents.
@@ -111,8 +112,10 @@ function* processLine(
       };
     }
 
-    const finishReason =
-      seenToolCalls || chunk.message?.tool_calls?.length ? 'tool_calls' : 'stop';
+    const finishReason = mapOllamaFinishReason(
+      seenToolCalls || Boolean(chunk.message?.tool_calls?.length),
+      chunk.done_reason,
+    );
     yield { type: 'done', finishReason };
   }
 }
