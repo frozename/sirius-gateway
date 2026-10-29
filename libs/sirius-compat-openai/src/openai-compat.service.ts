@@ -11,6 +11,7 @@ import type {
   UnifiedMessage,
   UnifiedResponseFormat,
   UnifiedStreamEvent,
+  UnifiedToolCall,
   UnifiedToolChoice,
 } from '@sirius/core';
 
@@ -229,8 +230,12 @@ export class OpenAiCompatService {
     if (typeof body.input === 'string') {
       messages.push({ role: 'user', content: body.input });
     } else {
-      for (const item of body.input) {
-        messages.push(this.mapResponsesInputItem(item));
+      for (const [index, item] of body.input.entries()) {
+        if (item.type === 'function_call') {
+          this.appendResponsesFunctionCall(messages, item);
+        } else {
+          messages.push(this.mapResponsesInputItem(item, index));
+        }
       }
     }
 
@@ -643,7 +648,8 @@ export class OpenAiCompatService {
   }
 
   private mapResponsesInputItem(
-    item: OpenAiResponsesInputItem,
+    item: Exclude<OpenAiResponsesInputItem, { type: 'function_call' }>,
+    index: number,
   ): UnifiedMessage {
     if (item.type === 'function_call_output') {
       return {
@@ -662,14 +668,44 @@ export class OpenAiCompatService {
     let content: string;
     if (typeof item.content === 'string') {
       content = item.content;
-    } else {
+    } else if (Array.isArray(item.content)) {
       content = item.content
         .filter((p) => p.text)
         .map((p) => p.text!)
         .join('');
+    } else {
+      // A missing content field is a client error, not a 500 (#18).
+      throw this.createHttpError(
+        HttpStatus.BAD_REQUEST,
+        `Input item at index ${index} has no content`,
+        'invalid_request_error',
+      );
     }
 
     return { role, content };
+  }
+
+  /**
+   * A Responses API function_call input item is an assistant tool call
+   * (#18). It joins the assistant message right before it, so consecutive
+   * calls become one assistant turn, the shape Chat Completions upstreams
+   * expect ahead of the tool results.
+   */
+  private appendResponsesFunctionCall(
+    messages: UnifiedMessage[],
+    item: Extract<OpenAiResponsesInputItem, { type: 'function_call' }>,
+  ): void {
+    const call: UnifiedToolCall = {
+      id: item.call_id,
+      type: 'function',
+      function: { name: item.name, arguments: item.arguments },
+    };
+    const previous = messages.at(-1);
+    if (previous?.role === 'assistant') {
+      previous.toolCalls = [...(previous.toolCalls ?? []), call];
+      return;
+    }
+    messages.push({ role: 'assistant', content: '', toolCalls: [call] });
   }
 
   private mapResponseFormat(
