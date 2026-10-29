@@ -211,6 +211,14 @@ export type OpenAiResponsesInputItem =
       role: 'system' | 'developer' | 'user' | 'assistant';
       content: string | { type: string; text?: string }[];
     }
+  | {
+      type: 'function_call';
+      call_id: string;
+      name: string;
+      arguments: string;
+      id?: string;
+      status?: string;
+    }
   | { type: 'function_call_output'; call_id: string; output: string };
 
 export interface OpenAiResponsesResponse {
